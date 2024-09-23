@@ -28,27 +28,36 @@ class TaskRepository extends BaseRepositorySoftDelete {
     }
 
     async createTask(task, user, assignedTo = null) {
-        const openStatus = await Status.findOne({ statusName: 'open' });
-        if (!openStatus) throw new Error('Open status not found');
-
+        const openStatus = await Status.findOne({ _id: task.status });
+        if (!openStatus){ 
+            console.log(`${task.status} status id`);
+            throw new Error('Open status not found');
+        }
+    
         const taskToCreate = {
             ...task,
-            status: openStatus._id,
+            status: openStatus._id,  // Store the status reference (_id)
             user: user._id,
             assignedTo: assignedTo ? assignedTo._id : null
         };
-
+    
+        // Create the task
         const newTask = await this.model.create(taskToCreate);
-
+    
+        // Log the task creation action
         await Log.create({
             action: 'Task Created',
             user: user._id,
             task: newTask._id,
             assignedTo: assignedTo ? assignedTo._id : null
         });
-
-        return newTask;
+    
+        // Populate the status field before returning the task
+        const populatedTask = await this.model.findById(newTask._id).populate('status');
+    
+        return populatedTask;
     }
+    
 
     async updateTask(id, updatedTask, userId) {
         const task = await this.findById(id, userId);

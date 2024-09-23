@@ -9,16 +9,18 @@ class UserService extends BaseService {
     }
 
     async registerUser(userData) {
+        console.log('User register starts')
         const existingUser = await this.repository.findByUsername(userData.username);
         if (existingUser) {
             throw new Error('User already exists');
         }
         const newUser = await this.repository.createUser(userData);
+        const token = await generateToken(newUser._id)
         return {
             _id: newUser._id,
             username: newUser.username,
             role: newUser.role,
-            token: "Bearer " + generateToken(newUser._id)
+            token: "Bearer " + token
         };
     }
 
@@ -27,11 +29,13 @@ class UserService extends BaseService {
         if (!user) {
             throw new Error('Invalid username or password');
         }
+
+        const token = await generateToken(user._id)
         return {
             _id: user._id,
             username: user.username,
             role: user.role,
-            token: "Bearer " + generateToken(user._id)
+            token: "Bearer " + token
         };
     }
 
