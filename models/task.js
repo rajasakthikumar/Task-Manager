@@ -9,7 +9,12 @@ const taskSchema = new mongoose.Schema({
     modifiedDate: Date,
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },  // User who created the task
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },  // User to whom the task is assigned
-    comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }]  // Comments linked to this task
+    comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }],
+    priority:{
+        type: String,
+        enum: ['low', 'medium', 'high'],
+        default: 'low'
+    }  
 });
 
 module.exports = mongoose.model('Task', taskSchema);
