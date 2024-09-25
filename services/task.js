@@ -47,7 +47,6 @@ class TaskService extends BaseService {
         return this.repository.addComment(taskId, user._id, commentText);
     }
 
-    // New methods added
     getTasksByPriority(user, priority) {
         return this.repository.getTasksByPriority(user._id, priority);
     }

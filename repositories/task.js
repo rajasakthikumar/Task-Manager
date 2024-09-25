@@ -211,7 +211,6 @@ class TaskRepository extends BaseRepositorySoftDelete {
         return await task.save();
     }
 
-    // Restore a soft-deleted task (only if the user created the task or is assigned to it)
     async restoreTask(id, userId) {
         const task = await this.model.findOne({
             _id: id,
