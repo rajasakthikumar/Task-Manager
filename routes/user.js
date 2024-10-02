@@ -16,7 +16,6 @@ router.post('/login', limiter, (req, res, next) => {
     userController.loginUser(req, res, next);
 });
 
-// Get user by ID (protected)
 router.get('/user/:id', protect, (req, res, next) => {
     userController.getUserById(req, res, next);
 });

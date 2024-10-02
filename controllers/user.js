@@ -1,6 +1,7 @@
 const asyncHandler = require('../middleware/asynchandler');
 
 class UserController {
+    
     constructor(userService) {
         this.userService = userService;
         console.log('User Controller created');
