@@ -1,3 +1,4 @@
+const log = require('../models/log');
 const User = require('../models/user');
 const BaseRepositorySoftDelete = require('./baseRepositoryWithSoftDelete');
 const bcrypt = require('bcryptjs');
@@ -19,16 +20,15 @@ class UserRepository extends BaseRepositorySoftDelete {
         return await User.findOne({ username });
     }
 
-    // Validate user credentials (for login)
     async validateUser(username, password) {
         const user = await this.findByUsername(username);
+        console.log(user);
         if (user && await bcrypt.compare(password, user.password)) {
-            return user; // Return user if credentials are valid
+            return user; 
         }
-        return null; // Invalid credentials
+        return null; 
     }
 
-    // Find user by ID (overriding BaseRepository's method to exclude password)
     async findById(id) {
         return await User.findById(id).select('-password'); // Exclude password field
     }
@@ -53,6 +53,11 @@ class UserRepository extends BaseRepositorySoftDelete {
     async deleteUserById(id) {
         return this.deleteById(id);
     }
+
+    async getAllUsers() {
+        return await User.find();
+    }
+
 }
 
 module.exports = UserRepository;

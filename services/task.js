@@ -8,6 +8,7 @@ class TaskService extends BaseService {
     }
 
     getAllTasks(user) {
+        
         return this.repository.getAllTasks(user._id);
     }
 

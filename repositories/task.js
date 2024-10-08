@@ -11,16 +11,45 @@ class TaskRepository extends BaseRepositorySoftDelete {
     }
 
     async getAllTasks(userId) {
-        return await this.model.find({
-            $or: [{ user: userId }, { assignedTo: userId }]
-        }).populate('status');
-    }
+        try {
+          const tasks = await this.model
+            .find({
+              $or: [{ user: userId }, { assignedTo: userId }]
+            })
+            .populate({
+              path: 'comments',
+              populate: {
+                path: 'createdBy',
+                model: 'User',
+                select: 'username role' 
+              }
+            })
+            .populate('status');
+      
+          console.log(`@!@!@!@! this is task ${tasks}`);
+          if (!tasks || tasks.length === 0) throw new Error('Tasks not found or unauthorized');
+          return tasks;
+        } catch (error) {
+          throw new Error(`Error fetching tasks: ${error.message}`);
+        }
+      }
+      
 
     async findById(id, userId) {
         const task = await this.model.findOne({
             _id: id,
             $or: [{ user: userId }, { assignedTo: userId }]
-        }).populate('status');
+        }).populate({
+            path: 'comments',
+            populate: {
+              path: 'createdBy',
+              model: 'User',
+              select: 'username role' 
+            }
+          })
+          .populate('status');
+
+        console.log(`@!@!@!@! this is task ${task}`);
 
         if (!task) throw new Error('Task not found or unauthorized');
         return task;
@@ -29,7 +58,6 @@ class TaskRepository extends BaseRepositorySoftDelete {
     async createTask(task, user, assignedTo = null) {
         const openStatus = await Status.findOne({ _id: task.status });
         if (!openStatus){ 
-            console.log(`${task.status} status id`);
             throw new Error('Open status not found');
         }
     
@@ -58,7 +86,7 @@ class TaskRepository extends BaseRepositorySoftDelete {
     
     async updateTask(id, updatedTask, userId) {
         const task = await this.findById(id, userId);
-
+console.log('@!@!@!@! Reached here');
         // Only the creator or assigned user can update the task
         if (task.user.toString() !== userId.toString() && task.assignedTo.toString() !== userId.toString()) {
             throw new Error('Only the creator or assigned user can update this task');
@@ -138,7 +166,6 @@ class TaskRepository extends BaseRepositorySoftDelete {
         if (task.user.toString() !== userId.toString() && task.assignedTo.toString() !== userId.toString()) {
             throw new Error('Only the creator or assigned user can comment on this task');
         }
-
         const newComment = await Comment.create({
             text: commentText,
             createdBy: userId,

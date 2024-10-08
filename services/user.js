@@ -62,6 +62,12 @@ class UserService extends BaseService {
         }
         return user;
     }
+
+    async getAllUsers() {
+        const users = await this.repository.getAllUsers();
+        console.log(users);
+        return users;
+    }
 }
 
 module.exports = UserService;

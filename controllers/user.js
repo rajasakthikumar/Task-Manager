@@ -37,6 +37,11 @@ class UserController {
         const user = await this.userService.getUserByRole(username, role);
         res.status(200).json(user);
     });
+
+    getAllUsers = asyncHandler(async (req, res) => {
+        const users = await this.userService.getAllUsers();
+        res.status(200).json(users);
+    });
 }
 
 module.exports = UserController;

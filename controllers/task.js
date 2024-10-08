@@ -24,6 +24,7 @@ class TaskController {
     });
 
     updateTask = asyncHandler(async (req, res, next) => {
+        console.log(" @!@!@!@! req.body", req.body);
         const updatedTask = await this.service.updateTask(req.params.id, req.body, req.user);
         res.status(200).json(updatedTask);
     });
@@ -55,9 +56,9 @@ class TaskController {
 
     addComment = asyncHandler(async (req, res, next) => {
         const { taskId } = req.params;
-        const { commentText } = req.body;
+        const { text } = req.body;
 
-        const newComment = await this.service.addComment(taskId, req.user, commentText);
+        const newComment = await this.service.addComment(taskId, req.user, text);
 
         res.status(201).json(newComment);
     });

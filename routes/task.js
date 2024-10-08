@@ -19,10 +19,12 @@ router.post('/tasks', protect, (req, res, next) => {
 });
 
 router.put('/tasks/:id', protect, (req, res, next) => {
+    console.log(" @!@!@!@! req.body", req.body);
     taskController.updateTask(req, res, next);
 });
 
 router.put('/tasks/:taskId/status/:statusId', protect, (req, res, next) => {
+    console.log(" @!@!@!@! req.body", req.body);
     taskController.updateTaskStatus(req, res, next);
 });
 
