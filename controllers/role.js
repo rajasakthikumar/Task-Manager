@@ -1,4 +1,3 @@
-// controllers/roleController.js
 const asyncHandler = require('../middleware/asynchandler');
 
 class RoleController {
@@ -12,12 +11,12 @@ class RoleController {
     });
 
     getAllRoles = asyncHandler(async (req, res) => {
-        const roles = await this.roleService.findAll();
+        const roles = await this.roleService.getAllRoles();
         res.status(200).json(roles);
     });
 
     getRoleById = asyncHandler(async (req, res) => {
-        const role = await this.roleService.findById(req.params.id);
+        const role = await this.roleService.getRoleById(req.params.id);
         res.status(200).json(role);
     });
 }

@@ -11,27 +11,34 @@ const UserController = require('./controllers/user');
 const RoleRepository = require('./repositories/role');
 const RoleService = require('./services/role');
 const RoleController = require('./controllers/role');
+const AuditLogRepository = require('./repositories/auditLog');
+const AuditLogService = require('./services/auditLog');
+const CommentController = require('./controllers/comment');
 
 const taskRepository = new TaskRepository();
 const commentRepository = new CommentRepository();
-const taskService = new TaskService(taskRepository, commentRepository);
-const taskController = new TaskController(taskService);
-
 const statusRepository = new StatusRepository();
-const statusService = new StatusService(statusRepository);
-const statusController = new StatusController(statusService);
-
 const userRepository = new UserRepository();
-const userService = new UserService(userRepository);
-const userController = new UserController(userService);
-
 const roleRepository = new RoleRepository();
+const auditLogRepository = new AuditLogRepository();
+
+const taskService = new TaskService(taskRepository, commentRepository);
+const statusService = new StatusService(statusRepository, auditLogRepository);
+const userService = new UserService(userRepository);
 const roleService = new RoleService(roleRepository);
+const auditLogService = new AuditLogService(auditLogRepository);
+const commentService = new CommentService(commentRepository);
+
+const taskController = new TaskController(taskService);
+const statusController = new StatusController(statusService);
+const userController = new UserController(userService);
 const roleController = new RoleController(roleService);
+const commentController = new CommentController();
 
 module.exports = {
     taskController,
     statusController,
     userController,
-    roleController
+    roleController,
+    commentController
 };

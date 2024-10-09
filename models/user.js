@@ -8,14 +8,22 @@ const userSchema = new mongoose.Schema({
         unique: true,
         trim: true
     },
+    email: { 
+        type: String,
+        required: true,
+        unique: true,
+        trim: true
+    },
     password: {
         type: String,
         required: true
     },
-    roles: [{ // A user can have multiple roles
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Role'
-    }],
+    roles: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Role'
+        }
+    ],
     createdAt: {
         type: Date,
         default: Date.now
@@ -29,7 +37,9 @@ userSchema.pre('save', async function (next) {
     next();
 });
 
-userSchema.methods.matchPassword = async function (enteredPassword) {
+userSchema.methods.matchPassword = async function (
+    enteredPassword
+) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
 

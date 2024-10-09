@@ -7,11 +7,13 @@ const roleSchema = new mongoose.Schema({
         unique: true,
         trim: true
     },
-    permissions: [{
-        type: String,
-        required: true,
-        trim: true
-    }],
+    permissions: [
+        {
+            type: String,
+            required: true,
+            trim: true
+        }
+    ],
     createdAt: {
         type: Date,
         default: Date.now

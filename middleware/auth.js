@@ -2,11 +2,13 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 const asyncHandler = require('./asynchandler');
 
-// Protect routes - ensure user is authenticated
 const protect = asyncHandler(async (req, res, next) => {
     let token;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    if (
+        req.headers.authorization &&
+        req.headers.authorization.startsWith('Bearer')
+    ) {
         token = req.headers.authorization.split(' ')[1];
     }
     if (!token) {
@@ -35,12 +37,22 @@ const protect = asyncHandler(async (req, res, next) => {
 });
 
 const authorize = (...allowedRoles) => {
-    return (req, res, next) => {
-        if (!req.user || !req.user.roles.some(role => allowedRoles.includes(role))) {
-            throw new Error('Forbidden: You do not have access to this resource');
+    return asyncHandler(async (req, res, next) => {
+        if (!req.user) {
+            throw new Error('Not authorized');
+        }
+        await req.user.populate('roles').execPopulate();
+        const userRoles = req.user.roles.map(role => role.name);
+        const hasRole = userRoles.some(role =>
+            allowedRoles.includes(role)
+        );
+        if (!hasRole) {
+            return res.status(403).json({
+                message: 'Forbidden: You do not have access to this resource'
+            });
         }
         next();
-    };
+    });
 };
 
 module.exports = { protect, authorize };

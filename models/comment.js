@@ -1,5 +1,10 @@
 const mongoose = require('mongoose');
 
+const attachmentSchema = new mongoose.Schema({
+    filename: String,
+    filepath: String
+});
+
 const commentSchema = new mongoose.Schema({
     text: {
         type: String,
@@ -20,12 +25,7 @@ const commentSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
-    attachments: [
-        {
-            filename: String,
-            filepath: String
-        }
-    ]
+    attachments: [attachmentSchema]
 });
 
 module.exports = mongoose.model('Comment', commentSchema);

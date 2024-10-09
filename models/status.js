@@ -1,4 +1,3 @@
-// models/status.js
 const mongoose = require('mongoose');
 
 const statusSchema = new mongoose.Schema({
@@ -18,14 +17,18 @@ const statusSchema = new mongoose.Schema({
         default: false
     },
     deletedAt: Date,
-    nextStatuses: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Status'
-    }],
-    prevStatuses: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Status'
-    }],
+    nextStatuses: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Status'
+        }
+    ],
+    prevStatuses: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Status'
+        }
+    ],
     createdAt: {
         type: Date,
         default: Date.now
