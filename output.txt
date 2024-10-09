@@ -10,6 +10,9 @@ const StatusController = require('./controllers/status');
 const UserRepository = require('./repositories/user');
 const UserService = require('./services/user');
 const UserController = require('./controllers/user');
+const RoleRepository = require('./repositories/role');
+const RoleService = require('./services/role');
+const RoleController = require('./controllers/role');
 
 const taskRepository = new TaskRepository();
 const commentRepository = new CommentRepository();
@@ -24,43 +27,63 @@ const userRepository = new UserRepository();
 const userService = new UserService(userRepository);
 const userController = new UserController(userService);
 
+const roleRepository = new RoleRepository();
+const roleService = new RoleService(roleRepository);
+const roleController = new RoleController(roleService);
+
 module.exports = {
     taskController,
     statusController,
-    userController
+    userController,
+    roleController
 };
 
 
 File: config\db.js
 ----------------------------------------
-
 const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+dotenv.config();
+const uri = process.env.DBURI;
+
+if (!uri) {
+  throw new Error('MongoDB URI is missing. Make sure MONGODB_URI is defined.');
+}
+
+mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('Error connecting to MongoDB:', err));
 
 
-const connectDB = async () => {
-    console.log(process.env.DBURI)
-    try {
-    const conn = await mongoose.connect(process.env.DBURI, {
-        autoIndex: true,
-        dbName: process.env.MONGO_DATABASE_NAME,
-        retryWrites: true,
-        w:process.env.DB_W,
-        appName: process.env.DB_APPNAME,
+File: controllers\role.js
+----------------------------------------
+// controllers/roleController.js
+const asyncHandler = require('../middleware/asynchandler');
 
-    });
-
-    if (conn) {
-        console.log(`MongoDB Connected: ${conn.connection.host} with Database : ${process.env.MONGO_DATABASE_NAME}`);
+class RoleController {
+    constructor(roleService) {
+        this.roleService = roleService;
     }
 
-} catch (error) {
-    console.error('Error connecting to MongoDB:', error);
-}
+    createRole = asyncHandler(async (req, res) => {
+        const role = await this.roleService.createRole(req.body);
+        res.status(201).json(role);
+    });
+
+    getAllRoles = asyncHandler(async (req, res) => {
+        const roles = await this.roleService.findAll();
+        res.status(200).json(roles);
+    });
+
+    getRoleById = asyncHandler(async (req, res) => {
+        const role = await this.roleService.findById(req.params.id);
+        res.status(200).json(role);
+    });
 }
 
-connectDB()
+module.exports = RoleController;
 
-module.exports = connectDB;
 
 File: controllers\status.js
 ----------------------------------------
@@ -399,6 +422,13 @@ class UserController {
         }
         res.status(200).json(user);
     });
+
+    assignRole = asyncHandler(async (req, res) => {
+        const { userId, roleId } = req.body;
+        const updatedUser = await this.userService.assignRole(userId, roleId);
+        res.status(200).json(updatedUser);
+    });
+
 }
 
 module.exports = UserController;
@@ -415,6 +445,7 @@ const errorHandler = require('./middleware/errorHandler');
 const taskRoutes = require('./routes/task');
 const statusRoutes = require('./routes/status');
 const userRoutes = require('./routes/user');
+const roleRoutes = require('./routes/role');
 
 dotenv.config();
 
@@ -426,10 +457,11 @@ app.use(morgan('dev'));
 app.use('/api/tasks', taskRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/roles', roleRoutes); 
 
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 mongoose.connect(process.env.DBURI ) .then(() => {
     app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
@@ -987,6 +1019,27 @@ class CommentRepository extends BaseRepository {
 module.exports = CommentRepository;
 
 
+File: repositories\role.js
+----------------------------------------
+const BaseService = require('./baseService');
+
+class RoleService extends BaseService {
+    constructor(repository) {
+        super(repository);
+    }
+
+    async createRole(roleData) {
+        const existingRole = await this.repository.findByName(roleData.name);
+        if (existingRole) {
+            throw new Error('Role already exists');
+        }
+        return await this.repository.create(roleData);
+    }
+}
+
+module.exports = RoleService;
+
+
 File: repositories\status.js
 ----------------------------------------
 // repositories/statusRepository.js
@@ -1150,7 +1203,6 @@ module.exports = StatusRepository;
 
 File: repositories\task.js
 ----------------------------------------
-// repositories/taskRepository.js
 const BaseRepositoryWithSoftDelete = require('./baseRepositoryWithSoftDelete');
 const Task = require('../models/task');
 const Status = require('../models/status');
@@ -1614,6 +1666,22 @@ class UserRepository extends BaseRepository {
 module.exports = UserRepository;
 
 
+File: routes\role.js
+----------------------------------------
+// routes/role.js
+const express = require('express');
+const { roleController } = require('../bootstrap');
+const { protect } = require('../middleware/auth');
+
+const router = express.Router();
+
+router.post('/', protect, roleController.createRole);
+router.get('/', protect, roleController.getAllRoles);
+router.get('/:id', protect, roleController.getRoleById);
+
+module.exports = router;
+
+
 File: routes\status.js
 ----------------------------------------
 // routes/statusRoutes.js
@@ -1709,8 +1777,9 @@ router.post('/tasks/:taskId/comments', protect, (req, res, next) => {
     taskController.addComment(req, res, next);
 });
 
-router.post('/tasks/:taskId/comments/:commentId/attachments', protect, (req, res, next) => {
-    taskController.addAttachmentsToComment(req, res, next);
+
+router.post('/tasks', protect, authorize('admin', 'manager'), (req, res, next) => {
+    taskController.createTask(req, res, next);
 });
 
 module.exports = router;
@@ -1745,6 +1814,10 @@ router.get('/', protect, (req, res, next) => {
     userController.getAllUsers(req, res, next);
 });
 
+router.post('/assign-role', protect, (req, res, next) => {
+    userController.assignRole(req, res, next);
+});
+
 module.exports = router;
 
 
@@ -1775,6 +1848,7 @@ function getAllJsFiles(dir, fileList = []) {
   return fileList;
 }
 
+// Function to write all .js file names, paths, and content to a .txt file
 function writeJsFilesToTxt(jsFiles, outputFile) {
   const writeStream = fs.createWriteStream(outputFile);
 
@@ -1783,9 +1857,6 @@ function writeJsFilesToTxt(jsFiles, outputFile) {
     writeStream.write(`File: ${filePath}\n`);
     writeStream.write('----------------------------------------\n');
     writeStream.write(`${content}\n\n`);
-    //run node filename.js to execute each file
-    const command = `node ${filePath}`;
-
   });
 
   writeStream.end();
@@ -1871,45 +1942,59 @@ module.exports = CommentService;
 
 File: services\email.js
 ----------------------------------------
-
-
+// services/emailService.js
+require('dotenv').config();
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-    service: 'Gmail', 
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
+  service: process.env.EMAIL_SERVICE,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
 });
 
-transporter.verify(function (error, success) {
-    if (error) {
-        console.error('Error configuring email transporter:', error);
-    } else {
-        console.log('Email transporter is ready to send messages');
-    }
-});
+async function sendEmail(to, subject, text) {
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to,
+    subject,
+    text
+  };
 
-const sendEmail = async (to, subject, text, html = '') => {
-    const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to,
-        subject,
-        text,
-        html
-    };
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`Email sent to ${to}`);
+  } catch (error) {
+    console.error('Error sending email:', error);
+  }
+}
 
-    try {
-        await transporter.sendMail(mailOptions);
-        console.log(`Email sent to ${to} with subject "${subject}"`);
-    } catch (error) {
-        console.error(`Error sending email to ${to}:`, error);
-        throw error;
-    }
+module.exports = {
+  sendEmail
 };
 
-module.exports = sendEmail;
+
+File: services\role.js
+----------------------------------------
+// services/roleService.js
+const BaseService = require('./baseService');
+
+class RoleService extends BaseService {
+    constructor(repository) {
+        super(repository);
+    }
+
+    async createRole(roleData) {
+        const existingRole = await this.repository.findByName(roleData.name);
+        if (existingRole) {
+            throw new Error('Role already exists');
+        }
+        return await this.repository.create(roleData);
+    }
+}
+
+module.exports = RoleService;
 
 
 File: services\status.js
@@ -1967,7 +2052,7 @@ module.exports = StatusService;
 File: services\task.js
 ----------------------------------------
 const BaseService = require('./baseService');
-
+const {sendEmail} = require('./email');
 class TaskService extends BaseService {
     constructor(repository, commentRepository) {
         console.log("Task Service created");
@@ -1983,18 +2068,13 @@ class TaskService extends BaseService {
         return this.repository.findById(id, user._id);
     }
 
-    async createTask(taskData, user, assignedTo = null) {
-        const task = await this.repository.createTask(taskData, user, assignedTo);
-        return task;
-    }
+    
 
     updateTask(id, task, user) {
         return this.repository.updateTask(id, task, user._id);
     }
 
-    updateTaskStatus(taskId, statusId, user) {
-        return this.repository.updateTaskStatus(taskId, statusId, user._id);
-    }
+   
 
     deleteTask(id, user) {
         return this.repository.deleteTask(id, user._id);
@@ -2004,6 +2084,38 @@ class TaskService extends BaseService {
         return this.repository.addComment(taskId, user._id, commentText);
     }
 
+
+    async createTask(task, user, assignedTo = null) {
+        const newTask = await this.taskRepository.createTask(task, user, assignedTo);
+    
+        if (assignedTo) {
+          await sendEmail(assignedTo.email, 'New Task Assigned', `You have been assigned a new task: ${task.title}`);
+        }
+    
+        return newTask;
+      }
+    
+      async assignTask(id, userId, assignedToId) {
+        const updatedTask = await this.taskRepository.assignTask(id, userId, assignedToId);
+    
+        const assignedToUser = await this.taskRepository.getUserById(assignedToId);  // Assuming a method to get user by ID
+        if (assignedToUser) {
+          await sendEmail(assignedToUser.email, 'Task Assigned', `You have been assigned a task: ${updatedTask.title}`);
+        }
+    
+        return updatedTask;
+      }
+    
+      async updateTaskStatus(taskId, statusId, userId) {
+        const updatedTask = await this.taskRepository.updateTaskStatus(taskId, statusId, userId);
+    
+        const taskOwner = await this.taskRepository.getUserById(updatedTask.user);
+        if (taskOwner) {
+          await sendEmail(taskOwner.email, 'Task Status Updated', `The status of your task "${updatedTask.title}" has been updated to "${updatedTask.status.statusName}".`);
+        }
+    
+        return updatedTask;
+      }
 }
 
 module.exports = TaskService;
@@ -2060,6 +2172,20 @@ class UserService extends BaseService {
 
     async getAllUsers() {
         return await this.repository.findAll();
+    }
+
+    async assignRole(userId, roleId) {
+        const user = await this.repository.findById(userId);
+        if (!user) {
+            throw new Error('User not found');
+        }
+    
+        if (!user.roles.includes(roleId)) {
+            user.roles.push(roleId);
+            await user.save();
+        }
+    
+        return user;
     }
 }
 

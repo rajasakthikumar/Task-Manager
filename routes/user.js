@@ -25,4 +25,8 @@ router.get('/', protect, (req, res, next) => {
     userController.getAllUsers(req, res, next);
 });
 
+router.post('/assign-role', protect, (req, res, next) => {
+    userController.assignRole(req, res, next);
+});
+
 module.exports = router;

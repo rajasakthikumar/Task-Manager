@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
 
 // Directory to start scanning
 const startDir = './'; // Change this to your starting directory if needed
+const outputFilePath = 'output.txt';
 
 // Function to get all .js files from a directory recursively
 function getAllJsFiles(dir, fileList = []) {
@@ -23,27 +23,25 @@ function getAllJsFiles(dir, fileList = []) {
   return fileList;
 }
 
-// Function to run Node.js for each .js file
-function runNodeForEachFile(jsFiles) {
+// Function to write all .js file names, paths, and content to a .txt file
+function writeJsFilesToTxt(jsFiles, outputFile) {
+  const writeStream = fs.createWriteStream(outputFile);
+
   jsFiles.forEach((filePath) => {
-    exec(`node "${filePath}"`, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error executing ${filePath}:`, error.message);
-        return;
-      }
-      if (stderr) {
-        console.error(`Stderr from ${filePath}:`, stderr);
-        return;
-      }
-      console.log(`Output from ${filePath}:\n${stdout}`);
-    });
+    const content = fs.readFileSync(filePath, 'utf8');
+    writeStream.write(`File: ${filePath}\n`);
+    writeStream.write('----------------------------------------\n');
+    writeStream.write(`${content}\n\n`);
   });
+
+  writeStream.end();
 }
 
 // Main process
 try {
   const jsFiles = getAllJsFiles(startDir);
-  runNodeForEachFile(jsFiles);
+  writeJsFilesToTxt(jsFiles, outputFilePath);
+  console.log(`All JavaScript files have been written to ${outputFilePath}`);
 } catch (err) {
   console.error('Error:', err);
 }

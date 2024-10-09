@@ -48,6 +48,20 @@ class UserService extends BaseService {
     async getAllUsers() {
         return await this.repository.findAll();
     }
+
+    async assignRole(userId, roleId) {
+        const user = await this.repository.findById(userId);
+        if (!user) {
+            throw new Error('User not found');
+        }
+    
+        if (!user.roles.includes(roleId)) {
+            user.roles.push(roleId);
+            await user.save();
+        }
+    
+        return user;
+    }
 }
 
 module.exports = UserService;

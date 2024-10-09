@@ -34,8 +34,9 @@ router.post('/tasks/:taskId/comments', protect, (req, res, next) => {
     taskController.addComment(req, res, next);
 });
 
-router.post('/tasks/:taskId/comments/:commentId/attachments', protect, (req, res, next) => {
-    taskController.addAttachmentsToComment(req, res, next);
+
+router.post('/tasks', protect, authorize('admin', 'manager'), (req, res, next) => {
+    taskController.createTask(req, res, next);
 });
 
 module.exports = router;

@@ -67,6 +67,13 @@ class UserController {
         }
         res.status(200).json(user);
     });
+
+    assignRole = asyncHandler(async (req, res) => {
+        const { userId, roleId } = req.body;
+        const updatedUser = await this.userService.assignRole(userId, roleId);
+        res.status(200).json(updatedUser);
+    });
+
 }
 
 module.exports = UserController;
