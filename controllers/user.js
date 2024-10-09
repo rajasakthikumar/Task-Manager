@@ -42,6 +42,31 @@ class UserController {
         const users = await this.userService.getAllUsers();
         res.status(200).json(users);
     });
+
+    assignRole = asyncHandler(async (req, res) => {
+        const { userId, roleId } = req.body;
+        const user = await User.findById(userId);
+        const role = await Role.findById(roleId);
+
+        if (!user || !role) {
+            return res.status(404).json({ message: 'User or Role not found' });
+        }
+
+        if (!user.roles.includes(roleId)) {
+            user.roles.push(roleId);
+            await user.save();
+        }
+
+        res.status(200).json(user);
+    });
+
+    getUserDetails = asyncHandler(async (req, res) => {
+        const user = await User.findById(req.params.id).populate('roles');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.status(200).json(user);
+    });
 }
 
 module.exports = UserController;

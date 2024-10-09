@@ -1,141 +1,157 @@
-const BaseRepositorySoftDelete = require('./baseRepositoryWithSoftDelete');
+// repositories/statusRepository.js
+const BaseRepositoryWithSoftDelete = require('./baseRepositoryWithSoftDelete');
 const Status = require('../models/status');
-const Log = require('../models/log');
+const AuditLog = require('../models/auditLog');
 
-class StatusRepository extends BaseRepositorySoftDelete {
+class StatusRepository extends BaseRepositoryWithSoftDelete {
     constructor() {
         console.log("Status Repository created");
         super(Status);
     }
 
     async getAllStatus(userId) {
-        return await this.model.find({ user: userId, isDeleted: false });
+        // Assuming any authenticated user can view all statuses
+        return await this.model.find({}).populate('nextStatuses').populate('prevStatuses');
     }
 
-    async findById(id, userId) {
-        const status = await this.model.findOne({ _id: id, user: userId, isDeleted: false });
-        if (!status) throw new Error('Status not found or unauthorized');
-        return status;
-    }
+    async createStatus(statusData, userId) {
+        const newStatus = await this.model.create(statusData);
 
-    async createStatus(statusData, user) {
-        const createdStatus = await this.model.create({
-            ...statusData,
-            user: user._id
-        });
-
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Status Created',
-            user: user._id,
-            status: createdStatus._id
+            performedBy: userId,
+            entity: 'Status',
+            entityId: newStatus._id,
+            changes: { statusData }
         });
-        return createdStatus;
+
+        return newStatus;
     }
 
     async deleteStatus(id, userId) {
-        const status = await this.findById(id, userId);
-        status.isDeleted = true;
-        status.deletedDate = new Date();
+        const status = await this.findById(id);
+        if (!status) throw new Error('Status not found');
 
-        await Log.create({
+        await this.softDelete(id);
+
+        // Create audit log
+        await AuditLog.create({
             action: 'Status Soft Deleted',
-            user: userId,
-            status: status._id
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id
         });
 
-        return await status.save();
+        return status;
     }
 
     async restoreStatus(id, userId) {
-        const status = await this.model.findOne({ _id: id, user: userId, isDeleted: true });
-        if (!status) throw new Error('Status not found or unauthorized');
+        const status = await this.restore(id);
+        if (!status) throw new Error('Status not found');
 
-        status.isDeleted = false;
-        status.deletedDate = null;
-
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Status Restored',
-            user: userId,
-            status: status._id
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id
         });
 
-        return await status.save();
+        return status;
     }
 
     async hardDeleteStatus(id, userId) {
-        const status = await this.findById(id, userId);
-        await Log.create({
+        const status = await this.findById(id);
+        if (!status) throw new Error('Status not found');
+
+        await this.delete(id);
+
+        // Create audit log
+        await AuditLog.create({
             action: 'Status Permanently Deleted',
-            user: userId,
-            status: status._id
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id
         });
-        return await this.model.findByIdAndDelete(id);
+
+        return status;
     }
 
     async modifyStatus(id, statusData, userId) {
-        const status = await this.findById(id, userId);
+        const status = await this.update(id, statusData);
 
-        Object.assign(status, statusData);
-
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Status Modified',
-            user: userId,
-            status: status._id
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id,
+            changes: statusData
         });
 
-        return await status.save();
+        return status;
     }
 
-    async addNextStatus(id, newNextStatusId, userId) {
-        const currentStatus = await this.findById(id, userId);
-        const newNextStatus = await this.findById(newNextStatusId, userId);
+    async addNextStatus(id, nextStatusId, userId) {
+        const status = await this.findById(id);
+        if (!status) throw new Error('Status not found');
 
-        if (!currentStatus.nextStatus.includes(newNextStatus._id)) {
-            currentStatus.nextStatus.push(newNextStatus._id);
-        }
+        status.nextStatuses.push(nextStatusId);
+        await status.save();
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Next Status Added',
-            user: userId,
-            status: currentStatus._id,
-            nextStatus: newNextStatus._id
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id,
+            changes: { nextStatusId }
         });
 
-        return await currentStatus.save();
+        return status;
     }
 
-    async addPrevStatus(id, newPrevStatusId, userId) {
-        const currentStatus = await this.findById(id, userId);
-        const newPrevStatus = await this.findById(newPrevStatusId, userId);
+    async addPrevStatus(id, prevStatusId, userId) {
+        const status = await this.findById(id);
+        if (!status) throw new Error('Status not found');
 
-        if (!currentStatus.previousStatus.includes(newPrevStatus._id)) {
-            currentStatus.previousStatus.push(newPrevStatus._id);
-        }
+        status.prevStatuses.push(prevStatusId);
+        await status.save();
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Previous Status Added',
-            user: userId,
-            status: currentStatus._id,
-            previousStatus: newPrevStatus._id
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id,
+            changes: { prevStatusId }
         });
 
-        return await currentStatus.save();
-    }
-
-    async getDeletedStatuses(userId) {
-        return await this.model.find({ user: userId, isDeleted: true });
+        return status;
     }
 
     async validateTransition(currentStatusId, nextStatusId, userId) {
-        const currentStatus = await this.findById(currentStatusId, userId);
-        const nextStatus = await this.findById(nextStatusId, userId);
+        const currentStatus = await this.findById(currentStatusId);
+        if (!currentStatus) throw new Error('Current status not found');
 
-        if (currentStatus.nextStatus.includes(nextStatus._id)) {
-            return true;
-        } else {
+        if (!currentStatus.nextStatuses.includes(nextStatusId)) {
             throw new Error('Invalid status transition');
         }
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Status Transition Validated',
+            performedBy: userId,
+            entity: 'StatusTransition',
+            entityId: `${currentStatusId}->${nextStatusId}`,
+            changes: {}
+        });
+
+        return true;
     }
+
+    // Additional methods if needed
 }
 
 module.exports = StatusRepository;

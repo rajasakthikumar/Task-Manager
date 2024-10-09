@@ -19,7 +19,13 @@ const commentSchema = new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
-    }
+    },
+    attachments: [
+        {
+            filename: String,
+            filepath: String
+        }
+    ]
 });
 
 module.exports = mongoose.model('Comment', commentSchema);

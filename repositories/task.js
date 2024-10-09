@@ -1,10 +1,12 @@
-const BaseRepositorySoftDelete = require('./baseRepositoryWithSoftDelete');
+// repositories/taskRepository.js
+const BaseRepositoryWithSoftDelete = require('./baseRepositoryWithSoftDelete');
 const Task = require('../models/task');
 const Status = require('../models/status');
-const Comment = require('../models/comment'); 
-const Log = require('../models/log');
+const Comment = require('../models/comment');
+const AuditLog = require('../models/auditLog');
+const User = require('../models/user');
 
-class TaskRepository extends BaseRepositorySoftDelete {
+class TaskRepository extends BaseRepositoryWithSoftDelete {
     constructor() {
         console.log("Task Repository created");
         super(Task);
@@ -12,42 +14,42 @@ class TaskRepository extends BaseRepositorySoftDelete {
 
     async getAllTasks(userId) {
         try {
-          const tasks = await this.model
-            .find({
-              $or: [{ user: userId }, { assignedTo: userId }]
-            })
-            .populate({
-              path: 'comments',
-              populate: {
-                path: 'createdBy',
-                model: 'User',
-                select: 'username role' 
-              }
-            })
-            .populate('status');
-      
-          console.log(`@!@!@!@! this is task ${tasks}`);
-          if (!tasks || tasks.length === 0) throw new Error('Tasks not found or unauthorized');
-          return tasks;
+            const tasks = await this.model
+                .find({
+                    $or: [{ user: userId }, { assignedTo: userId }]
+                })
+                .populate({
+                    path: 'comments',
+                    populate: {
+                        path: 'createdBy',
+                        model: 'User',
+                        select: 'username roles'
+                    }
+                })
+                .populate('status');
+
+            console.log(`@!@!@!@! this is task ${tasks}`);
+            if (!tasks || tasks.length === 0) throw new Error('Tasks not found or unauthorized');
+            return tasks;
         } catch (error) {
-          throw new Error(`Error fetching tasks: ${error.message}`);
+            throw new Error(`Error fetching tasks: ${error.message}`);
         }
-      }
-      
+    }
 
     async findById(id, userId) {
         const task = await this.model.findOne({
             _id: id,
             $or: [{ user: userId }, { assignedTo: userId }]
-        }).populate({
-            path: 'comments',
-            populate: {
-              path: 'createdBy',
-              model: 'User',
-              select: 'username role' 
-            }
-          })
-          .populate('status');
+        })
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'createdBy',
+                    model: 'User',
+                    select: 'username roles'
+                }
+            })
+            .populate('status');
 
         console.log(`@!@!@!@! this is task ${task}`);
 
@@ -57,36 +59,39 @@ class TaskRepository extends BaseRepositorySoftDelete {
 
     async createTask(task, user, assignedTo = null) {
         const openStatus = await Status.findOne({ _id: task.status });
-        if (!openStatus){ 
+        if (!openStatus) {
             throw new Error('Open status not found');
         }
-    
+
         const taskToCreate = {
             ...task,
-            status: openStatus._id,  
+            status: openStatus._id,
             user: user._id,
             assignedTo: assignedTo ? assignedTo._id : null
         };
-    
+
         // Create the task
         const newTask = await this.model.create(taskToCreate);
-    
-        await Log.create({
+
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Created',
-            user: user._id,
-            task: newTask._id,
-            assignedTo: assignedTo ? assignedTo._id : null
+            performedBy: user._id,
+            entity: 'Task',
+            entityId: newTask._id,
+            changes: { taskData: task, assignedTo: assignedTo ? assignedTo._id : null }
         });
-    
+
         // Populate the status field before returning the task
         const populatedTask = await this.model.findById(newTask._id).populate('status');
-    
+
         return populatedTask;
     }
-    
+
     async updateTask(id, updatedTask, userId) {
         const task = await this.findById(id, userId);
-console.log('@!@!@!@! Reached here');
+        console.log('@!@!@!@! Reached here');
+
         // Only the creator or assigned user can update the task
         if (task.user.toString() !== userId.toString() && task.assignedTo.toString() !== userId.toString()) {
             throw new Error('Only the creator or assigned user can update this task');
@@ -96,10 +101,13 @@ console.log('@!@!@!@! Reached here');
         task.description = updatedTask.description || task.description;
         task.modifiedDate = new Date();
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Updated',
-            user: userId,
-            task: task._id
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { title: task.title, description: task.description }
         });
 
         return await task.save();
@@ -111,11 +119,13 @@ console.log('@!@!@!@! Reached here');
 
         task.assignedTo = assignedToId;
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Assigned',
-            user: userId,
-            task: task._id,
-            assignedTo: assignedToId
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { assignedTo: assignedToId }
         });
 
         return await task.save();
@@ -123,10 +133,10 @@ console.log('@!@!@!@! Reached here');
 
     async updateTaskStatus(taskId, statusId, userId) {
         const task = await this.findById(taskId, userId);
-        
+
         const status = await Status.findById(statusId);
         if (!status) throw new Error('Status not found');
-        
+
         task.status = status._id;
         task.modifiedDate = new Date();
 
@@ -134,11 +144,13 @@ console.log('@!@!@!@! Reached here');
             task.endDate = new Date();
         }
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Status Updated',
-            user: userId,
-            task: task._id,
-            newStatus: status._id
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { status: status._id }
         });
 
         return await task.save();
@@ -147,10 +159,12 @@ console.log('@!@!@!@! Reached here');
     async deleteTask(id, userId) {
         const task = await this.findById(id, userId);
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Deleted',
-            user: userId,
-            task: task._id
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id
         });
 
         return await this.model.findByIdAndDelete(id);
@@ -166,6 +180,7 @@ console.log('@!@!@!@! Reached here');
         if (task.user.toString() !== userId.toString() && task.assignedTo.toString() !== userId.toString()) {
             throw new Error('Only the creator or assigned user can comment on this task');
         }
+
         const newComment = await Comment.create({
             text: commentText,
             createdBy: userId,
@@ -174,6 +189,15 @@ console.log('@!@!@!@! Reached here');
 
         task.comments.push(newComment._id);
         await task.save();
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Comment Added',
+            performedBy: userId,
+            entity: 'Comment',
+            entityId: newComment._id,
+            changes: { text: commentText, taskId }
+        });
 
         return newComment;
     }
@@ -201,11 +225,13 @@ console.log('@!@!@!@! Reached here');
         task.priority = priority;
         task.modifiedDate = new Date();
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Priority Updated',
-            user: userId,
-            task: task._id,
-            newPriority: priority
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { priority: priority }
         });
 
         return await task.save();
@@ -229,10 +255,12 @@ console.log('@!@!@!@! Reached here');
         task.isDeleted = true;
         task.deletedDate = new Date();
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Soft Deleted',
-            user: userId,
-            task: task._id
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id
         });
 
         return await task.save();
@@ -250,16 +278,17 @@ console.log('@!@!@!@! Reached here');
         task.isDeleted = false;
         task.deletedDate = null;
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Restored',
-            user: userId,
-            task: task._id
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id
         });
 
         return await task.save();
     }
 
-    // Get all soft-deleted tasks for a user
     async getDeletedTasks(userId) {
         return await this.model.find({
             isDeleted: true,
@@ -267,7 +296,6 @@ console.log('@!@!@!@! Reached here');
         }).populate('status');
     }
 
-    // Get tasks by status
     async getTasksByStatus(userId, statusId) {
         return await this.model.find({
             $or: [{ user: userId }, { assignedTo: userId }],
@@ -275,7 +303,6 @@ console.log('@!@!@!@! Reached here');
         }).populate('status');
     }
 
-    // Get tasks within a date range
     async getTasksByDateRange(userId, startDate, endDate) {
         const query = {
             $or: [{ user: userId }, { assignedTo: userId }],
@@ -285,7 +312,6 @@ console.log('@!@!@!@! Reached here');
         return await this.model.find(query).populate('status');
     }
 
-    // Search tasks by a term in title or description
     async searchTasks(userId, searchTerm) {
         return await this.model.find({
             $or: [{ user: userId }, { assignedTo: userId }],
@@ -296,7 +322,6 @@ console.log('@!@!@!@! Reached here');
         }).populate('status');
     }
 
-    // Get overdue tasks (tasks past endDate and not completed)
     async getOverdueTasks(userId) {
         const today = new Date();
 
@@ -312,7 +337,6 @@ console.log('@!@!@!@! Reached here');
         }).populate('status');
     }
 
-    // Get tasks due today
     async getTasksDueToday(userId) {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
@@ -326,36 +350,56 @@ console.log('@!@!@!@! Reached here');
         }).populate('status');
     }
 
-    // Remove assignment from a task (only if the user created the task)
     async unassignTask(id, userId) {
         const task = await this.model.findOne({ _id: id, user: userId });
         if (!task) throw new Error('Task not found or unauthorized');
 
         task.assignedTo = null;
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task Unassigned',
-            user: userId,
-            task: task._id
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id
         });
 
         return await task.save();
     }
 
-    // Update end date of a task (only if the user created the task or is assigned to it)
     async updateTaskEndDate(id, userId, endDate) {
         const task = await this.findById(id, userId);
 
         task.endDate = endDate;
         task.modifiedDate = new Date();
 
-        await Log.create({
+        // Create audit log
+        await AuditLog.create({
             action: 'Task End Date Updated',
-            user: userId,
-            task: task._id,
-            newEndDate: endDate
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { endDate: endDate }
         });
 
+        return await task.save();
+    }
+
+    async softDelete(id) {
+        const task = await this.findById(id);
+        if (!task) throw new Error('Task not found');
+        
+        task.isDeleted = true;
+        task.deletedAt = new Date();
+        return await task.save();
+    }
+
+    async restore(id) {
+        const task = await this.model.findOne({ _id: id, isDeleted: true });
+        if (!task) throw new Error('Task not found or already restored');
+
+        task.isDeleted = false;
+        task.deletedAt = null;
         return await task.save();
     }
 }

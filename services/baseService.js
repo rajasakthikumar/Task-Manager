@@ -1,28 +1,27 @@
-const { model } = require("mongoose");
-
+// services/baseService.js
 class BaseService {
     constructor(repository) {
         this.repository = repository;
     }
 
-    create(data) {
-       return this.repository.create(data);
+    async create(data) {
+        return await this.repository.create(data);
     }
 
-    insertMany(datas) {
-        return this.repository.insertMany(datas);
+    async findAll(filter = {}, options = {}) {
+        return await this.repository.findAll(filter, options);
     }
 
-    findAll(filter,queryOptions) {
-        return this.repository.findAll(filter,queryOptions);
+    async findById(id, populate = '') {
+        return await this.repository.findById(id, populate);
     }
 
-    findById(id,queryOptions) {
-        return this.repository.findById(id,queryOptions)
+    async update(id, data) {
+        return await this.repository.update(id, data);
     }
 
-    deleteById(id) {
-        return this.repository.delete(id)
+    async delete(id) {
+        return await this.repository.delete(id);
     }
 }
 

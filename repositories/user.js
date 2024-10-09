@@ -1,63 +1,51 @@
-const log = require('../models/log');
+// repositories/userRepository.js
+const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
-const BaseRepositorySoftDelete = require('./baseRepositoryWithSoftDelete');
-const bcrypt = require('bcryptjs');
+const AuditLog = require('../models/auditLog');
 
-class UserRepository extends BaseRepositorySoftDelete {
+class UserRepository extends BaseRepository {
     constructor() {
-        console.log('User Repository created');
+        console.log("User Repository created");
         super(User);
     }
 
-    // Create a new user
-    async createUser(userData) {
-        const user = new User(userData);
-        return await user.save();
-    }
-
-    // Find a user by username
     async findByUsername(username) {
-        return await User.findOne({ username });
+        try {
+            const user = await this.model.findOne({ username });
+            return user;
+        } catch (error) {
+            throw new Error(`Error finding user by username: ${error.message}`);
+        }
     }
 
     async validateUser(username, password) {
         const user = await this.findByUsername(username);
-        console.log(user);
-        if (user && await bcrypt.compare(password, user.password)) {
-            return user; 
+        if (user && await user.matchPassword(password)) {
+            return user;
         }
-        return null; 
+        return null;
     }
 
-    async findById(id) {
-        return await User.findById(id).select('-password'); // Exclude password field
+    async createUser(userData) {
+        const newUser = await this.model.create(userData);
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'User Registered',
+            performedBy: newUser._id,
+            entity: 'User',
+            entityId: newUser._id,
+            changes: { username: newUser.username, roles: newUser.roles }
+        });
+
+        return newUser;
     }
 
-    // Update user's password
-    async updatePassword(id, newPassword) {
-        const user = await this.findById(id);
-        if (!user) throw new Error('User not found');
-
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(newPassword, salt);
-        await user.save();
-        return user;
+    async getAllAdmins() {
+        return await this.model.find({ roles: 'admin' }).select('username roles');
     }
 
-    // Find user by username and role
-    async findUserByRole(username, role) {
-        return await User.findOne({ username, role });
-    }
-
-    // Soft delete user (override BaseRepositorySoftDelete)
-    async deleteUserById(id) {
-        return this.deleteById(id);
-    }
-
-    async getAllUsers() {
-        return await User.find();
-    }
-
+    // Additional methods if needed
 }
 
 module.exports = UserRepository;

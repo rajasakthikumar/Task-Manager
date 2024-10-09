@@ -1,0 +1,2084 @@
+File: bootstrap.js
+----------------------------------------
+const TaskRepository = require('./repositories/task');
+const CommentRepository = require('./repositories/comment');
+const TaskService = require('./services/task');
+const TaskController = require('./controllers/task');
+const StatusRepository = require('./repositories/status');
+const StatusService = require('./services/status');
+const StatusController = require('./controllers/status');
+const UserRepository = require('./repositories/user');
+const UserService = require('./services/user');
+const UserController = require('./controllers/user');
+
+const taskRepository = new TaskRepository();
+const commentRepository = new CommentRepository();
+const taskService = new TaskService(taskRepository, commentRepository);
+const taskController = new TaskController(taskService);
+
+const statusRepository = new StatusRepository();
+const statusService = new StatusService(statusRepository);
+const statusController = new StatusController(statusService);
+
+const userRepository = new UserRepository();
+const userService = new UserService(userRepository);
+const userController = new UserController(userService);
+
+module.exports = {
+    taskController,
+    statusController,
+    userController
+};
+
+
+File: config\db.js
+----------------------------------------
+
+const mongoose = require('mongoose');
+
+
+const connectDB = async () => {
+    console.log(process.env.DBURI)
+    try {
+    const conn = await mongoose.connect(process.env.DBURI, {
+        autoIndex: true,
+        dbName: process.env.MONGO_DATABASE_NAME,
+        retryWrites: true,
+        w:process.env.DB_W,
+        appName: process.env.DB_APPNAME,
+
+    });
+
+    if (conn) {
+        console.log(`MongoDB Connected: ${conn.connection.host} with Database : ${process.env.MONGO_DATABASE_NAME}`);
+    }
+
+} catch (error) {
+    console.error('Error connecting to MongoDB:', error);
+}
+}
+
+connectDB()
+
+module.exports = connectDB;
+
+File: controllers\status.js
+----------------------------------------
+// controllers/statusController.js
+const asyncHandler = require('../middleware/asynchandler');
+
+class StatusController {
+    constructor(service) {
+        this.service = service;
+    }
+
+    getAllStatus = asyncHandler(async (req, res) => {
+        const statuses = await this.service.getAllStatus(req.user);
+        res.status(200).json(statuses);
+    });
+
+    getDeletedStatuses = asyncHandler(async (req, res) => {
+        const statuses = await this.service.getDeletedStatuses(req.user);
+        res.status(200).json(statuses);
+    });
+
+    findStatusById = asyncHandler(async (req, res) => {
+        const id = req.params.id;
+        const status = await this.service.findById(id, req.user);
+        res.status(200).json(status);
+    });
+
+    createStatus = asyncHandler(async (req, res) => {
+        const status = await this.service.createStatus(req.body, req.user);
+        res.status(201).json(status);
+    });
+
+    deleteStatus = asyncHandler(async (req, res) => {
+        const id = req.params.id;
+        await this.service.deleteStatus(id, req.user);
+        res.status(200).json({ message: 'Status soft deleted successfully' });
+    });
+
+    restoreStatus = asyncHandler(async (req, res) => {
+        const id = req.params.id;
+        const restoredStatus = await this.service.restoreStatus(id, req.user);
+        res.status(200).json({ message: 'Status restored successfully', restoredStatus });
+    });
+
+    hardDeleteStatus = asyncHandler(async (req, res) => {
+        const id = req.params.id;
+        await this.service.hardDeleteStatus(id, req.user);
+        res.status(200).json({ message: 'Status permanently deleted successfully' });
+    });
+
+    modifyStatus = asyncHandler(async (req, res) => {
+        const id = req.params.id;
+        const bodyToModify = req.body;
+        const modifiedStatus = await this.service.modifyStatus(id, bodyToModify, req.user);
+        res.status(200).json(modifiedStatus);
+    });
+
+    addNextStatus = asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        const { nextStatusId } = req.body;
+        const status = await this.service.addNextStatus(id, nextStatusId, req.user);
+        res.status(200).json(status);
+    });
+
+    addPrevStatus = asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        const { prevStatusId } = req.body;
+        const status = await this.service.addPrevStatus(id, prevStatusId, req.user);
+        res.status(200).json(status);
+    });
+
+    validateTransition = asyncHandler(async (req, res) => {
+        const { currentStatusId, nextStatusId } = req.params;
+        await this.service.validateTransition(currentStatusId, nextStatusId, req.user);
+        res.status(200).json({ message: 'Status transition is valid' });
+    });
+}
+
+module.exports = StatusController;
+
+
+File: controllers\task.js
+----------------------------------------
+const asyncHandler = require('../middleware/asynchandler');
+
+class TaskController {
+    constructor(service) {
+        this.service = service;
+        console.log("Task Controller created");
+    }
+
+    getAllTasks = asyncHandler(async (req, res, next) => {
+        const tasks = await this.service.getAllTasks(req.user);
+        res.status(200).json(tasks);
+    });
+
+    getTaskById = asyncHandler(async (req, res, next) => {
+        const task = await this.service.findById(req.params.id, req.user);
+        res.status(200).json(task);
+    });
+
+    createTask = asyncHandler(async (req, res, next) => {
+        const taskData = { ...req.body };
+        const assignedTo = req.body.assignedTo || null;
+        const createdTask = await this.service.createTask(taskData, req.user, assignedTo);
+        res.status(201).json(createdTask);
+    });
+
+    updateTask = asyncHandler(async (req, res, next) => {
+        const updatedTask = await this.service.updateTask(req.params.id, req.body, req.user);
+        res.status(200).json(updatedTask);
+    });
+
+    updateTaskStatus = asyncHandler(async (req, res, next) => {
+        const { taskId, statusId } = req.params;
+        const updatedTask = await this.service.updateTaskStatus(taskId, statusId, req.user);
+        res.status(200).json(updatedTask);
+    });
+
+    deleteTask = asyncHandler(async (req, res, next) => {
+        const deletedTask = await this.service.deleteTask(req.params.id, req.user);
+        res.status(200).json({ message: 'Task deleted successfully', deletedTask });
+    });
+
+    deleteTasks = asyncHandler(async (req, res, next) => {
+        await this.service.deleteAllTasks(req.user);
+        res.status(200).json({
+            message: 'All tasks are cleared',
+        });
+    });
+
+    assignTask = asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        const { assignedToId } = req.body;
+
+        const updatedTask = await this.service.assignTask(id, req.user._id, assignedToId);
+        res.status(200).json(updatedTask);
+    });
+
+    addComment = asyncHandler(async (req, res, next) => {
+        const { taskId } = req.params;
+        const { text } = req.body;
+
+        const newComment = await this.service.addComment(taskId, req.user, text);
+
+        res.status(201).json(newComment);
+    });
+
+    getTasksByPriority = asyncHandler(async (req, res, next) => {
+        const { priority } = req.params;
+        const tasks = await this.service.getTasksByPriority(req.user, priority);
+        res.status(200).json(tasks);
+    });
+
+    updateTaskPriority = asyncHandler(async (req, res, next) => {
+        const { id } = req.params;
+        const { priority } = req.body;
+        const updatedTask = await this.service.updateTaskPriority(id, req.user, priority);
+        res.status(200).json(updatedTask);
+    });
+
+    getTasksAssignedTo = asyncHandler(async (req, res, next) => {
+        const tasks = await this.service.getTasksAssignedTo(req.user);
+        res.status(200).json(tasks);
+    });
+
+    getTasksCreatedBy = asyncHandler(async (req, res, next) => {
+        const tasks = await this.service.getTasksCreatedBy(req.user);
+        res.status(200).json(tasks);
+    });
+
+    softDeleteTask = asyncHandler(async (req, res, next) => {
+        const { id } = req.params;
+        const softDeletedTask = await this.service.softDeleteTask(id, req.user);
+        res.status(200).json({ message: 'Task soft deleted successfully', softDeletedTask });
+    });
+
+    restoreTask = asyncHandler(async (req, res, next) => {
+        const { id } = req.params;
+        const restoredTask = await this.service.restoreTask(id, req.user);
+        res.status(200).json({ message: 'Task restored successfully', restoredTask });
+    });
+
+    getDeletedTasks = asyncHandler(async (req, res, next) => {
+        const tasks = await this.service.getDeletedTasks(req.user);
+        res.status(200).json(tasks);
+    });
+
+    getTasksByDateRange = asyncHandler(async (req, res, next) => {
+        const { startDate, endDate } = req.query;
+        const tasks = await this.service.getTasksByDateRange(req.user, new Date(startDate), new Date(endDate));
+        res.status(200).json(tasks);
+    });
+
+    searchTasks = asyncHandler(async (req, res, next) => {
+        const { searchTerm } = req.query;
+        const tasks = await this.service.searchTasks(req.user, searchTerm);
+        res.status(200).json(tasks);
+    });
+
+    getOverdueTasks = asyncHandler(async (req, res, next) => {
+        const tasks = await this.service.getOverdueTasks(req.user);
+        res.status(200).json(tasks);
+    });
+
+    getTasksDueToday = asyncHandler(async (req, res, next) => {
+        const tasks = await this.service.getTasksDueToday(req.user);
+        res.status(200).json(tasks);
+    });
+
+    unassignTask = asyncHandler(async (req, res, next) => {
+        const { id } = req.params;
+        const updatedTask = await this.service.unassignTask(id, req.user);
+        res.status(200).json(updatedTask);
+    });
+
+    updateTaskEndDate = asyncHandler(async (req, res, next) => {
+        const { id } = req.params;
+        const { endDate } = req.body;
+        const updatedTask = await this.service.updateTaskEndDate(id, req.user, new Date(endDate));
+        res.status(200).json(updatedTask);
+    });
+
+    addComment = asyncHandler(async (req, res) => {
+        const { taskId } = req.params;
+        const { text } = req.body;
+        const newComment = await this.service.addComment(taskId, req.user._id, text);
+        res.status(201).json(newComment);
+    });
+
+    softDeleteTask = asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        const deletedTask = await this.service.softDeleteTask(id);
+        res.status(200).json({ message: 'Task soft deleted successfully', deletedTask });
+    });
+
+    restoreTask = asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        const restoredTask = await this.service.restoreTask(id);
+        res.status(200).json({ message: 'Task restored successfully', restoredTask });
+    });
+
+    getTasksWithFilter = asyncHandler(async (req, res) => {
+        const { page, limit, status, priority } = req.query;
+        const filter = {};
+
+        if (status) filter.status = status;
+        if (priority) filter.priority = priority;
+
+        const tasks = await this.service.getTasksWithFilter(filter, parseInt(page), parseInt(limit));
+        res.status(200).json(tasks);
+    });
+
+    addComment = asyncHandler(async (req, res) => {
+        const { taskId } = req.params;
+        const { text } = req.body;
+        const newComment = await this.service.addComment(taskId, req.user._id, text);
+        res.status(201).json(newComment);
+    });
+
+    
+
+}
+
+module.exports = TaskController;
+
+
+File: controllers\user.js
+----------------------------------------
+const asyncHandler = require('../middleware/asynchandler');
+
+class UserController {
+    
+    constructor(userService) {
+        this.userService = userService;
+        console.log('User Controller created');
+    }
+
+    registerUser = asyncHandler(async (req, res) => {
+        const { username, password } = req.body;
+        const user = await this.userService.registerUser({ username, password });
+        res.status(201).json(user);
+    });
+
+    loginUser = asyncHandler(async (req, res) => {
+        const { username, password } = req.body;
+        const user = await this.userService.loginUser(username, password);
+        res.status(200).json(user);
+    });
+
+    getUserById = asyncHandler(async (req, res) => {
+        const userId = req.params.id;
+        const user = await this.userService.getUserById(userId);
+        res.status(200).json(user);
+    });
+
+    getUserByUsername = asyncHandler(async (req, res) => {
+        const username = req.params.username;
+        const user = await this.userService.getUserByUsername(username);
+        res.status(200).json(user);
+    });
+
+    getUser = asyncHandler(async (req, res) => {
+        const username = req.params.username;
+        const role = req.params.role.toLowerCase();
+        const user = await this.userService.getUserByRole(username, role);
+        res.status(200).json(user);
+    });
+
+    getAllUsers = asyncHandler(async (req, res) => {
+        const users = await this.userService.getAllUsers();
+        res.status(200).json(users);
+    });
+
+    assignRole = asyncHandler(async (req, res) => {
+        const { userId, roleId } = req.body;
+        const user = await User.findById(userId);
+        const role = await Role.findById(roleId);
+
+        if (!user || !role) {
+            return res.status(404).json({ message: 'User or Role not found' });
+        }
+
+        if (!user.roles.includes(roleId)) {
+            user.roles.push(roleId);
+            await user.save();
+        }
+
+        res.status(200).json(user);
+    });
+
+    getUserDetails = asyncHandler(async (req, res) => {
+        const user = await User.findById(req.params.id).populate('roles');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.status(200).json(user);
+    });
+}
+
+module.exports = UserController;
+
+
+File: index.js
+----------------------------------------
+const express = require('express');
+const dotenv = require('dotenv');
+const mongoose = require('mongoose');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const errorHandler = require('./middleware/errorHandler');
+const taskRoutes = require('./routes/task');
+const statusRoutes = require('./routes/status');
+const userRoutes = require('./routes/user');
+
+dotenv.config();
+
+const app = express();
+app.use(express.json());
+app.use(helmet());
+app.use(morgan('dev'));
+
+app.use('/api/tasks', taskRoutes);
+app.use('/api/status', statusRoutes);
+app.use('/api/users', userRoutes);
+
+app.use(errorHandler);
+
+const PORT = process.env.PORT || 5000;
+mongoose.connect(process.env.DBURI ) .then(() => {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+})
+.catch(err => {
+    console.error('MongoDB connection error:', err.message);
+});
+
+File: middleware\asynchandler.js
+----------------------------------------
+const asyncHandler = fn => (req,res,next) => {
+    Promise.resolve(fn(req,res,next)).catch(next);
+}
+module.exports = asyncHandler
+
+File: middleware\auth.js
+----------------------------------------
+const jwt = require('jsonwebtoken');
+const User = require('../models/user');
+const asyncHandler = require('./asynchandler');
+
+// Protect routes - ensure user is authenticated
+const protect = asyncHandler(async (req, res, next) => {
+    let token;
+
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        token = req.headers.authorization.split(' ')[1];
+    }
+    if (!token) {
+        return res.status(401).json({
+            message: 'Not authorized, no token'
+        });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = await User.findById(decoded.id).select('-password');
+
+        if (!req.user) {
+            return res.status(401).json({
+                message: 'Not authorized, user not found'
+            });
+        }
+
+        next();
+    } catch (error) {
+        console.error('Auth error:', error);
+        res.status(401).json({
+            message: 'Not authorized, token failed'
+        });
+    }
+});
+
+const authorize = (...allowedRoles) => {
+    return (req, res, next) => {
+        if (!req.user || !req.user.roles.some(role => allowedRoles.includes(role))) {
+            throw new Error('Forbidden: You do not have access to this resource');
+        }
+        next();
+    };
+};
+
+module.exports = { protect, authorize };
+
+
+File: middleware\errorHandler.js
+----------------------------------------
+const errorHandler = (err, req, res, next) => {
+    console.error(err.stack);
+    res.status(err.statusCode || 500).json({
+        message: err.message || 'Server Error'
+    });
+};
+
+module.exports = errorHandler;
+
+
+
+File: middleware\permissions.js
+----------------------------------------
+const asyncHandler = require('./asynchandler');
+const User = require('../models/user');
+
+const permissionsCheck = (requiredPermissions) => {
+    return asyncHandler(async (req, res, next) => {
+        const userId = req.user._id;
+        const user = await User.findById(userId).populate('roles');
+
+        if (!user) {
+            return res.status(401).json({ message: 'Not authorized, user not found' });
+        }
+
+        const userPermissions = user.roles.flatMap(role => role.permissions);
+        const hasPermission = requiredPermissions.every(permission => userPermissions.includes(permission));
+        
+        if (!hasPermission) {
+            return res.status(403).json({ message: 'Forbidden: You do not have the necessary permissions' });
+        }
+
+        next();
+    });
+};
+
+module.exports = { permissionsCheck };
+
+
+File: middleware\rateLimit.js
+----------------------------------------
+const rateLimit = require('express-rate-limit');
+
+const limiter = rateLimit({
+    windowMs: 15*60*1000,
+    max:100,
+    message:" Too many requests from this IP, please try again later"
+});
+
+module.exports = limiter;
+
+File: middleware\upload.js
+----------------------------------------
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Ensure upload directory exists
+const uploadDirectory = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadDirectory)) {
+    fs.mkdirSync(uploadDirectory, { recursive: true });
+}
+
+// Multer storage configuration
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadDirectory);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+        cb(null, `${uniqueSuffix}-${file.originalname}`);
+    }
+});
+
+// File filter to allow specific file types
+const fileFilter = (req, file, cb) => {
+    const allowedMimeTypes = [
+        'image/jpeg',
+        'image/jpg',
+        'image/png',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+
+    if (allowedMimeTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Unsupported file type. Only images and documents are allowed.'));
+    }
+};
+
+// Configure multer
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, 
+    fileFilter
+});
+
+module.exports = upload;
+
+
+File: models\auditLog.js
+----------------------------------------
+const mongoose = require('mongoose');
+
+const auditLogSchema = new mongoose.Schema({
+    action: {
+        type: String,
+        required: true
+    },
+    performedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    entity: {
+        type: String,
+        required: true
+    },
+    entityId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true
+    },
+    changes: {
+        type: Object
+    },
+    timestamp: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+module.exports = mongoose.model('AuditLog', auditLogSchema);
+
+
+File: models\comment.js
+----------------------------------------
+const mongoose = require('mongoose');
+
+const commentSchema = new mongoose.Schema({
+    text: {
+        type: String,
+        required: true,
+        trim: true
+    },
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    task: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Task',
+        required: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    },
+    attachments: [
+        {
+            filename: String,
+            filepath: String
+        }
+    ]
+});
+
+module.exports = mongoose.model('Comment', commentSchema);
+
+
+File: models\role.js
+----------------------------------------
+const mongoose = require('mongoose');
+
+const roleSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true
+    },
+    permissions: [{
+        type: String,
+        required: true,
+        trim: true
+    }],
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+module.exports = mongoose.model('Role', roleSchema);
+
+
+File: models\status.js
+----------------------------------------
+// models/status.js
+const mongoose = require('mongoose');
+
+const statusSchema = new mongoose.Schema({
+    statusName: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true
+    },
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    isDeleted: {
+        type: Boolean,
+        default: false
+    },
+    deletedAt: Date,
+    nextStatuses: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Status'
+    }],
+    prevStatuses: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Status'
+    }],
+    createdAt: {
+        type: Date,
+        default: Date.now
+    },
+    modifiedAt: Date
+});
+
+module.exports = mongoose.model('Status', statusSchema);
+
+
+File: models\task.js
+----------------------------------------
+const mongoose = require('mongoose');
+
+const taskSchema = new mongoose.Schema({
+    title: {
+        type: String,
+        required: true,
+        trim: true
+    },
+    description: String,
+    status: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Status',
+        required: true
+    },
+    createdDate: {
+        type: Date,
+        default: Date.now
+    },
+    endDate: Date,
+    modifiedDate: Date,
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    assignedTo: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    comments: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Comment'
+    }],
+    priority: {
+        type: String,
+        enum: ['low', 'medium', 'high'],
+        default: 'low'
+    },
+    isDeleted: {
+        type: Boolean,
+        default: false
+    },
+    deletedDate: {
+        type: Date
+    }
+});
+
+module.exports = mongoose.model('Task', taskSchema);
+
+
+File: models\user.js
+----------------------------------------
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const userSchema = new mongoose.Schema({
+    username: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true
+    },
+    password: {
+        type: String,
+        required: true
+    },
+    roles: [{ // A user can have multiple roles
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Role'
+    }],
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+userSchema.pre('save', async function (next) {
+    if (!this.isModified('password')) return next();
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+});
+
+userSchema.methods.matchPassword = async function (enteredPassword) {
+    return await bcrypt.compare(enteredPassword, this.password);
+};
+
+module.exports = mongoose.model('User', userSchema);
+
+
+File: repositories\auditLog.js
+----------------------------------------
+// repositories/auditLogRepository.js
+const BaseRepository = require('./baseRepository');
+const AuditLog = require('../models/auditLog');
+
+class AuditLogRepository extends BaseRepository {
+    constructor() {
+        console.log("AuditLog Repository created");
+        super(AuditLog);
+    }
+
+    async getLogs(filter = {}, options = {}) {
+        try {
+            const logs = await this.model.find(filter)
+                .populate('performedBy', 'username roles')
+                .sort({ timestamp: -1 })
+                .skip(options.skip || 0)
+                .limit(options.limit || 20);
+            return logs;
+        } catch (error) {
+            throw new Error(`Error fetching audit logs: ${error.message}`);
+        }
+    }
+}
+
+module.exports = AuditLogRepository;
+
+
+File: repositories\baseRepository.js
+----------------------------------------
+// repositories/baseRepository.js
+class BaseRepository {
+    constructor(model) {
+        this.model = model;
+    }
+
+    async create(data) {
+        try {
+            const doc = await this.model.create(data);
+            return doc;
+        } catch (error) {
+            throw new Error(`Error creating ${this.model.modelName}: ${error.message}`);
+        }
+    }
+
+    async findAll(filter = {}, options = {}) {
+        try {
+            const docs = await this.model.find(filter)
+                .skip(options.skip || 0)
+                .limit(options.limit || 100)
+                .sort(options.sort || { createdAt: -1 });
+            return docs;
+        } catch (error) {
+            throw new Error(`Error fetching ${this.model.modelName}s: ${error.message}`);
+        }
+    }
+
+    async findById(id, populate = '') {
+        try {
+            const doc = await this.model.findById(id).populate(populate);
+            return doc;
+        } catch (error) {
+            throw new Error(`${this.model.modelName} not found with id ${id}`);
+        }
+    }
+
+    async update(id, data) {
+        try {
+            const updatedDoc = await this.model.findByIdAndUpdate(id, data, { new: true, runValidators: true });
+            return updatedDoc;
+        } catch (error) {
+            throw new Error(`Error updating ${this.model.modelName}: ${error.message}`);
+        }
+    }
+
+    async delete(id) {
+        try {
+            await this.model.findByIdAndDelete(id);
+            return true;
+        } catch (error) {
+            throw new Error(`Error deleting ${this.model.modelName}: ${error.message}`);
+        }
+    }
+}
+
+module.exports = BaseRepository;
+
+
+File: repositories\baseRepositoryWithSoftDelete.js
+----------------------------------------
+// repositories/baseRepositoryWithSoftDelete.js
+const BaseRepository = require('./baseRepository');
+
+class BaseRepositoryWithSoftDelete extends BaseRepository {
+    constructor(model) {
+        super(model);
+    }
+
+    async softDelete(id) {
+        try {
+            const doc = await this.model.findById(id);
+            if (!doc) throw new Error(`${this.model.modelName} not found with id ${id}`);
+            doc.isDeleted = true;
+            doc.deletedDate = new Date();
+            await doc.save();
+            return doc;
+        } catch (error) {
+            throw new Error(`Error soft deleting ${this.model.modelName}: ${error.message}`);
+        }
+    }
+
+    async restore(id) {
+        try {
+            const doc = await this.model.findById(id);
+            if (!doc) throw new Error(`${this.model.modelName} not found with id ${id}`);
+            doc.isDeleted = false;
+            doc.deletedDate = null;
+            await doc.save();
+            return doc;
+        } catch (error) {
+            throw new Error(`Error restoring ${this.model.modelName}: ${error.message}`);
+        }
+    }
+
+    async findAllDeleted() {
+        try {
+            const docs = await this.model.find({ isDeleted: true });
+            return docs;
+        } catch (error) {
+            throw new Error(`Error fetching deleted ${this.model.modelName}s: ${error.message}`);
+        }
+    }
+}
+
+module.exports = BaseRepositoryWithSoftDelete;
+
+
+File: repositories\comment.js
+----------------------------------------
+const Comment = require('../models/comment');
+const BaseRepository = require('./baseRepository');
+
+class CommentRepository extends BaseRepository {
+    constructor() {
+        super(Comment);
+    }
+
+    async addAttachments(commentId, attachments) {
+        const comment = await this.findById(commentId);
+        if (!comment) {
+            throw new Error('Comment not found');
+        }
+
+        comment.attachments.push(...attachments);
+        return await comment.save();
+    }
+}
+
+module.exports = CommentRepository;
+
+
+File: repositories\status.js
+----------------------------------------
+// repositories/statusRepository.js
+const BaseRepositoryWithSoftDelete = require('./baseRepositoryWithSoftDelete');
+const Status = require('../models/status');
+const AuditLog = require('../models/auditLog');
+
+class StatusRepository extends BaseRepositoryWithSoftDelete {
+    constructor() {
+        console.log("Status Repository created");
+        super(Status);
+    }
+
+    async getAllStatus(userId) {
+        // Assuming any authenticated user can view all statuses
+        return await this.model.find({}).populate('nextStatuses').populate('prevStatuses');
+    }
+
+    async createStatus(statusData, userId) {
+        const newStatus = await this.model.create(statusData);
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Status Created',
+            performedBy: userId,
+            entity: 'Status',
+            entityId: newStatus._id,
+            changes: { statusData }
+        });
+
+        return newStatus;
+    }
+
+    async deleteStatus(id, userId) {
+        const status = await this.findById(id);
+        if (!status) throw new Error('Status not found');
+
+        await this.softDelete(id);
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Status Soft Deleted',
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id
+        });
+
+        return status;
+    }
+
+    async restoreStatus(id, userId) {
+        const status = await this.restore(id);
+        if (!status) throw new Error('Status not found');
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Status Restored',
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id
+        });
+
+        return status;
+    }
+
+    async hardDeleteStatus(id, userId) {
+        const status = await this.findById(id);
+        if (!status) throw new Error('Status not found');
+
+        await this.delete(id);
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Status Permanently Deleted',
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id
+        });
+
+        return status;
+    }
+
+    async modifyStatus(id, statusData, userId) {
+        const status = await this.update(id, statusData);
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Status Modified',
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id,
+            changes: statusData
+        });
+
+        return status;
+    }
+
+    async addNextStatus(id, nextStatusId, userId) {
+        const status = await this.findById(id);
+        if (!status) throw new Error('Status not found');
+
+        status.nextStatuses.push(nextStatusId);
+        await status.save();
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Next Status Added',
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id,
+            changes: { nextStatusId }
+        });
+
+        return status;
+    }
+
+    async addPrevStatus(id, prevStatusId, userId) {
+        const status = await this.findById(id);
+        if (!status) throw new Error('Status not found');
+
+        status.prevStatuses.push(prevStatusId);
+        await status.save();
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Previous Status Added',
+            performedBy: userId,
+            entity: 'Status',
+            entityId: id,
+            changes: { prevStatusId }
+        });
+
+        return status;
+    }
+
+    async validateTransition(currentStatusId, nextStatusId, userId) {
+        const currentStatus = await this.findById(currentStatusId);
+        if (!currentStatus) throw new Error('Current status not found');
+
+        if (!currentStatus.nextStatuses.includes(nextStatusId)) {
+            throw new Error('Invalid status transition');
+        }
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Status Transition Validated',
+            performedBy: userId,
+            entity: 'StatusTransition',
+            entityId: `${currentStatusId}->${nextStatusId}`,
+            changes: {}
+        });
+
+        return true;
+    }
+
+    // Additional methods if needed
+}
+
+module.exports = StatusRepository;
+
+
+File: repositories\task.js
+----------------------------------------
+// repositories/taskRepository.js
+const BaseRepositoryWithSoftDelete = require('./baseRepositoryWithSoftDelete');
+const Task = require('../models/task');
+const Status = require('../models/status');
+const Comment = require('../models/comment');
+const AuditLog = require('../models/auditLog');
+const User = require('../models/user');
+
+class TaskRepository extends BaseRepositoryWithSoftDelete {
+    constructor() {
+        console.log("Task Repository created");
+        super(Task);
+    }
+
+    async getAllTasks(userId) {
+        try {
+            const tasks = await this.model
+                .find({
+                    $or: [{ user: userId }, { assignedTo: userId }]
+                })
+                .populate({
+                    path: 'comments',
+                    populate: {
+                        path: 'createdBy',
+                        model: 'User',
+                        select: 'username roles'
+                    }
+                })
+                .populate('status');
+
+            console.log(`@!@!@!@! this is task ${tasks}`);
+            if (!tasks || tasks.length === 0) throw new Error('Tasks not found or unauthorized');
+            return tasks;
+        } catch (error) {
+            throw new Error(`Error fetching tasks: ${error.message}`);
+        }
+    }
+
+    async findById(id, userId) {
+        const task = await this.model.findOne({
+            _id: id,
+            $or: [{ user: userId }, { assignedTo: userId }]
+        })
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'createdBy',
+                    model: 'User',
+                    select: 'username roles'
+                }
+            })
+            .populate('status');
+
+        console.log(`@!@!@!@! this is task ${task}`);
+
+        if (!task) throw new Error('Task not found or unauthorized');
+        return task;
+    }
+
+    async createTask(task, user, assignedTo = null) {
+        const openStatus = await Status.findOne({ _id: task.status });
+        if (!openStatus) {
+            throw new Error('Open status not found');
+        }
+
+        const taskToCreate = {
+            ...task,
+            status: openStatus._id,
+            user: user._id,
+            assignedTo: assignedTo ? assignedTo._id : null
+        };
+
+        // Create the task
+        const newTask = await this.model.create(taskToCreate);
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Created',
+            performedBy: user._id,
+            entity: 'Task',
+            entityId: newTask._id,
+            changes: { taskData: task, assignedTo: assignedTo ? assignedTo._id : null }
+        });
+
+        // Populate the status field before returning the task
+        const populatedTask = await this.model.findById(newTask._id).populate('status');
+
+        return populatedTask;
+    }
+
+    async updateTask(id, updatedTask, userId) {
+        const task = await this.findById(id, userId);
+        console.log('@!@!@!@! Reached here');
+
+        // Only the creator or assigned user can update the task
+        if (task.user.toString() !== userId.toString() && task.assignedTo.toString() !== userId.toString()) {
+            throw new Error('Only the creator or assigned user can update this task');
+        }
+
+        task.title = updatedTask.title || task.title;
+        task.description = updatedTask.description || task.description;
+        task.modifiedDate = new Date();
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Updated',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { title: task.title, description: task.description }
+        });
+
+        return await task.save();
+    }
+
+    async assignTask(id, userId, assignedToId) {
+        const task = await this.model.findOne({ _id: id, user: userId });
+        if (!task) throw new Error('Task not found or unauthorized');
+
+        task.assignedTo = assignedToId;
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Assigned',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { assignedTo: assignedToId }
+        });
+
+        return await task.save();
+    }
+
+    async updateTaskStatus(taskId, statusId, userId) {
+        const task = await this.findById(taskId, userId);
+
+        const status = await Status.findById(statusId);
+        if (!status) throw new Error('Status not found');
+
+        task.status = status._id;
+        task.modifiedDate = new Date();
+
+        if (status.statusName === 'completed') {
+            task.endDate = new Date();
+        }
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Status Updated',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { status: status._id }
+        });
+
+        return await task.save();
+    }
+
+    async deleteTask(id, userId) {
+        const task = await this.findById(id, userId);
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Deleted',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id
+        });
+
+        return await this.model.findByIdAndDelete(id);
+    }
+
+    async addComment(taskId, userId, commentText) {
+        const task = await this.model.findById(taskId);
+
+        if (!task) {
+            throw new Error('Task not found');
+        }
+
+        if (task.user.toString() !== userId.toString() && task.assignedTo.toString() !== userId.toString()) {
+            throw new Error('Only the creator or assigned user can comment on this task');
+        }
+
+        const newComment = await Comment.create({
+            text: commentText,
+            createdBy: userId,
+            task: taskId
+        });
+
+        task.comments.push(newComment._id);
+        await task.save();
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Comment Added',
+            performedBy: userId,
+            entity: 'Comment',
+            entityId: newComment._id,
+            changes: { text: commentText, taskId }
+        });
+
+        return newComment;
+    }
+
+    async getTasksByPriority(userId, priority) {
+        const validPriorities = ['low', 'medium', 'high'];
+        if (!validPriorities.includes(priority)) {
+            throw new Error('Invalid priority value');
+        }
+
+        return await this.model.find({
+            $or: [{ user: userId }, { assignedTo: userId }],
+            priority: priority
+        }).populate('status');
+    }
+
+    async updateTaskPriority(id, userId, priority) {
+        const task = await this.findById(id, userId);
+
+        const validPriorities = ['low', 'medium', 'high'];
+        if (!validPriorities.includes(priority)) {
+            throw new Error('Invalid priority value');
+        }
+
+        task.priority = priority;
+        task.modifiedDate = new Date();
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Priority Updated',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { priority: priority }
+        });
+
+        return await task.save();
+    }
+
+    async getTasksAssignedTo(userId) {
+        return await this.model.find({
+            assignedTo: userId
+        }).populate('status');
+    }
+
+    async getTasksCreatedBy(userId) {
+        return await this.model.find({
+            user: userId
+        }).populate('status');
+    }
+
+    async softDeleteTask(id, userId) {
+        const task = await this.findById(id, userId);
+
+        task.isDeleted = true;
+        task.deletedDate = new Date();
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Soft Deleted',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id
+        });
+
+        return await task.save();
+    }
+
+    async restoreTask(id, userId) {
+        const task = await this.model.findOne({
+            _id: id,
+            isDeleted: true,
+            $or: [{ user: userId }, { assignedTo: userId }]
+        });
+
+        if (!task) throw new Error('Task not found or unauthorized');
+
+        task.isDeleted = false;
+        task.deletedDate = null;
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Restored',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id
+        });
+
+        return await task.save();
+    }
+
+    async getDeletedTasks(userId) {
+        return await this.model.find({
+            isDeleted: true,
+            $or: [{ user: userId }, { assignedTo: userId }]
+        }).populate('status');
+    }
+
+    async getTasksByStatus(userId, statusId) {
+        return await this.model.find({
+            $or: [{ user: userId }, { assignedTo: userId }],
+            status: statusId
+        }).populate('status');
+    }
+
+    async getTasksByDateRange(userId, startDate, endDate) {
+        const query = {
+            $or: [{ user: userId }, { assignedTo: userId }],
+            createdDate: { $gte: startDate, $lte: endDate }
+        };
+
+        return await this.model.find(query).populate('status');
+    }
+
+    async searchTasks(userId, searchTerm) {
+        return await this.model.find({
+            $or: [{ user: userId }, { assignedTo: userId }],
+            $or: [
+                { title: new RegExp(searchTerm, 'i') },
+                { description: new RegExp(searchTerm, 'i') }
+            ]
+        }).populate('status');
+    }
+
+    async getOverdueTasks(userId) {
+        const today = new Date();
+
+        // Get the 'completed' status id
+        const completedStatus = await Status.findOne({ statusName: 'completed' });
+
+        if (!completedStatus) throw new Error('Completed status not found');
+
+        return await this.model.find({
+            $or: [{ user: userId }, { assignedTo: userId }],
+            endDate: { $lt: today },
+            status: { $ne: completedStatus._id }
+        }).populate('status');
+    }
+
+    async getTasksDueToday(userId) {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        return await this.model.find({
+            $or: [{ user: userId }, { assignedTo: userId }],
+            endDate: { $gte: startOfDay, $lte: endOfDay }
+        }).populate('status');
+    }
+
+    async unassignTask(id, userId) {
+        const task = await this.model.findOne({ _id: id, user: userId });
+        if (!task) throw new Error('Task not found or unauthorized');
+
+        task.assignedTo = null;
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task Unassigned',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id
+        });
+
+        return await task.save();
+    }
+
+    async updateTaskEndDate(id, userId, endDate) {
+        const task = await this.findById(id, userId);
+
+        task.endDate = endDate;
+        task.modifiedDate = new Date();
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'Task End Date Updated',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { endDate: endDate }
+        });
+
+        return await task.save();
+    }
+
+    async softDelete(id) {
+        const task = await this.findById(id);
+        if (!task) throw new Error('Task not found');
+        
+        task.isDeleted = true;
+        task.deletedAt = new Date();
+        return await task.save();
+    }
+
+    async restore(id) {
+        const task = await this.model.findOne({ _id: id, isDeleted: true });
+        if (!task) throw new Error('Task not found or already restored');
+
+        task.isDeleted = false;
+        task.deletedAt = null;
+        return await task.save();
+    }
+}
+
+module.exports = TaskRepository;
+
+
+File: repositories\user.js
+----------------------------------------
+// repositories/userRepository.js
+const BaseRepository = require('./baseRepository');
+const User = require('../models/user');
+const AuditLog = require('../models/auditLog');
+
+class UserRepository extends BaseRepository {
+    constructor() {
+        console.log("User Repository created");
+        super(User);
+    }
+
+    async findByUsername(username) {
+        try {
+            const user = await this.model.findOne({ username });
+            return user;
+        } catch (error) {
+            throw new Error(`Error finding user by username: ${error.message}`);
+        }
+    }
+
+    async validateUser(username, password) {
+        const user = await this.findByUsername(username);
+        if (user && await user.matchPassword(password)) {
+            return user;
+        }
+        return null;
+    }
+
+    async createUser(userData) {
+        const newUser = await this.model.create(userData);
+
+        // Create audit log
+        await AuditLog.create({
+            action: 'User Registered',
+            performedBy: newUser._id,
+            entity: 'User',
+            entityId: newUser._id,
+            changes: { username: newUser.username, roles: newUser.roles }
+        });
+
+        return newUser;
+    }
+
+    async getAllAdmins() {
+        return await this.model.find({ roles: 'admin' }).select('username roles');
+    }
+
+    // Additional methods if needed
+}
+
+module.exports = UserRepository;
+
+
+File: routes\status.js
+----------------------------------------
+// routes/statusRoutes.js
+const express = require('express');
+const { statusController } = require('../bootstrap');
+const { protect } = require('../middleware/auth');
+const router = express.Router();
+
+console.log("Status router created in the routes");
+
+router.get('/status', protect, (req, res, next) => {
+    statusController.getAllStatus(req, res, next);
+});
+
+router.get('/status/deleted', protect, (req, res, next) => {
+    statusController.getDeletedStatuses(req, res, next);
+});
+
+router.get('/status/:id', protect, (req, res, next) => {
+    statusController.findStatusById(req, res, next);
+});
+
+router.post('/status', protect, (req, res, next) => {
+    statusController.createStatus(req, res, next);
+});
+
+router.delete('/status/:id', protect, (req, res, next) => {
+    statusController.deleteStatus(req, res, next);
+});
+
+router.post('/status/:id/restore', protect, (req, res, next) => {
+    statusController.restoreStatus(req, res, next);
+});
+
+router.delete('/status/:id/hard-delete', protect, (req, res, next) => {
+    statusController.hardDeleteStatus(req, res, next);
+});
+
+router.put('/status/:id', protect, (req, res, next) => {
+    statusController.modifyStatus(req, res, next);
+});
+
+router.post('/status/:id/next-status', protect, (req, res, next) => {
+    statusController.addNextStatus(req, res, next);
+});
+
+router.post('/status/:id/prev-status', protect, (req, res, next) => {
+    statusController.addPrevStatus(req, res, next);
+});
+
+router.get('/status/validate-transition/:currentStatusId/:nextStatusId', protect, (req, res, next) => {
+    statusController.validateTransition(req, res, next);
+});
+
+module.exports = router;
+
+
+File: routes\task.js
+----------------------------------------
+const express = require('express');
+const { taskController } = require('../bootstrap');
+const { protect, authorize } = require('../middleware/auth');
+const { permissionsCheck } = require('../middleware/permissions');
+const router = express.Router();
+
+console.log("Task router created");
+
+router.get('/tasks', protect, permissionsCheck(['VIEW_TASKS']), (req, res, next) => {
+    taskController.getAllTasks(req, res, next);
+});
+
+router.get('/tasks/:id', protect, (req, res, next) => {
+    taskController.getTaskById(req, res, next);
+});
+
+router.post('/tasks', protect, permissionsCheck(['CREATE_TASK']), (req, res, next) => {
+    taskController.createTask(req, res, next);
+});
+
+router.put('/tasks/:id', protect, permissionsCheck(['UPDATE_TASK']), (req, res, next) => {
+    taskController.updateTask(req, res, next);
+});
+
+router.put('/tasks/:taskId/status/:statusId', protect, (req, res, next) => {
+    taskController.updateTaskStatus(req, res, next);
+});
+
+router.delete('/tasks/:id', protect, permissionsCheck(['DELETE_TASK']), (req, res, next) => {
+    taskController.deleteTask(req, res, next);
+});
+
+router.post('/tasks/:taskId/comments', protect, (req, res, next) => {
+    taskController.addComment(req, res, next);
+});
+
+router.post('/tasks/:taskId/comments/:commentId/attachments', protect, (req, res, next) => {
+    taskController.addAttachmentsToComment(req, res, next);
+});
+
+module.exports = router;
+
+
+File: routes\user.js
+----------------------------------------
+const express = require('express');
+const { userController } = require('../bootstrap');
+const { protect } = require('../middleware/auth');
+const limiter = require('../middleware/rateLimit');
+
+const router = express.Router();
+console.log("User router created");
+
+// Register a new user (public)
+router.post('/register',limiter, (req, res, next) => {
+    console.log('req.body', req.body);
+    userController.registerUser(req, res, next);
+});
+
+// Login user (public)
+router.post('/login', limiter, (req, res, next) => {
+    userController.loginUser(req, res, next);
+});
+
+router.get('/:id', protect, (req, res, next) => {
+    userController.getUserById(req, res, next);
+});
+
+router.get('/', protect, (req, res, next) => {
+    userController.getAllUsers(req, res, next);
+});
+
+module.exports = router;
+
+
+File: script.js
+----------------------------------------
+const fs = require('fs');
+const path = require('path');
+
+// Directory to start scanning
+const startDir = './'; // Change this to your starting directory if needed
+const outputFilePath = 'output.txt';
+
+// Function to get all .js files from a directory recursively
+function getAllJsFiles(dir, fileList = []) {
+  const files = fs.readdirSync(dir);
+
+  files.forEach((file) => {
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
+
+    if (stat.isDirectory() && file !== 'node_modules') {
+      getAllJsFiles(filePath, fileList);
+    } else if (path.extname(file) === '.js') {
+      fileList.push(filePath);
+    }
+  });
+
+  return fileList;
+}
+
+function writeJsFilesToTxt(jsFiles, outputFile) {
+  const writeStream = fs.createWriteStream(outputFile);
+
+  jsFiles.forEach((filePath) => {
+    const content = fs.readFileSync(filePath, 'utf8');
+    writeStream.write(`File: ${filePath}\n`);
+    writeStream.write('----------------------------------------\n');
+    writeStream.write(`${content}\n\n`);
+    //run node filename.js to execute each file
+    const command = `node ${filePath}`;
+
+  });
+
+  writeStream.end();
+}
+
+// Main process
+try {
+  const jsFiles = getAllJsFiles(startDir);
+  writeJsFilesToTxt(jsFiles, outputFilePath);
+  console.log(`All JavaScript files have been written to ${outputFilePath}`);
+} catch (err) {
+  console.error('Error:', err);
+}
+
+File: services\auditLog.js
+----------------------------------------
+// services/auditLogService.js
+const BaseService = require('./baseService');
+
+class AuditLogService extends BaseService {
+    constructor(repository) {
+        super(repository);
+    }
+
+    async getAuditLogs(filter = {}, options = {}) {
+        return await this.repository.getLogs(filter, options);
+    }
+}
+
+module.exports = AuditLogService;
+
+
+File: services\baseService.js
+----------------------------------------
+// services/baseService.js
+class BaseService {
+    constructor(repository) {
+        this.repository = repository;
+    }
+
+    async create(data) {
+        return await this.repository.create(data);
+    }
+
+    async findAll(filter = {}, options = {}) {
+        return await this.repository.findAll(filter, options);
+    }
+
+    async findById(id, populate = '') {
+        return await this.repository.findById(id, populate);
+    }
+
+    async update(id, data) {
+        return await this.repository.update(id, data);
+    }
+
+    async delete(id) {
+        return await this.repository.delete(id);
+    }
+}
+
+module.exports = BaseService;
+
+
+File: services\comment.js
+----------------------------------------
+// services/commentService.js
+const BaseService = require('./baseService');
+
+class CommentService extends BaseService {
+    constructor(repository) {
+        super(repository);
+    }
+
+    async addAttachmentToComment(commentId, attachments, userId) {
+        const updatedComment = await this.repository.addAttachmentToComment(commentId, attachments);
+        return updatedComment;
+    }
+}
+
+module.exports = CommentService;
+
+
+File: services\email.js
+----------------------------------------
+
+
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+    service: 'Gmail', 
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
+
+transporter.verify(function (error, success) {
+    if (error) {
+        console.error('Error configuring email transporter:', error);
+    } else {
+        console.log('Email transporter is ready to send messages');
+    }
+});
+
+const sendEmail = async (to, subject, text, html = '') => {
+    const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to,
+        subject,
+        text,
+        html
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log(`Email sent to ${to} with subject "${subject}"`);
+    } catch (error) {
+        console.error(`Error sending email to ${to}:`, error);
+        throw error;
+    }
+};
+
+module.exports = sendEmail;
+
+
+File: services\status.js
+----------------------------------------
+// services/statusService.js
+const BaseService = require('./baseService');
+const AuditLog = require('../models/auditLog');
+
+class StatusService extends BaseService {
+    constructor(repository, auditLogRepository) {
+        super(repository);
+        this.auditLogRepository = auditLogRepository;
+    }
+
+    async getAllStatus(user) {
+        return await this.repository.getAllStatus(user._id);
+    }
+
+    async createStatus(statusData, user) {
+        return await this.repository.createStatus(statusData, user._id);
+    }
+
+    async deleteStatus(id, user) {
+        return await this.repository.deleteStatus(id, user._id);
+    }
+
+    async restoreStatus(id, user) {
+        return await this.repository.restoreStatus(id, user._id);
+    }
+
+    async hardDeleteStatus(id, user) {
+        return await this.repository.hardDeleteStatus(id, user._id);
+    }
+
+    async modifyStatus(id, statusData, user) {
+        return await this.repository.modifyStatus(id, statusData, user._id);
+    }
+
+    async addNextStatus(id, nextStatusId, user) {
+        return await this.repository.addNextStatus(id, nextStatusId, user._id);
+    }
+
+    async addPrevStatus(id, prevStatusId, user) {
+        return await this.repository.addPrevStatus(id, prevStatusId, user._id);
+    }
+
+    async validateTransition(currentStatusId, nextStatusId, user) {
+        return await this.repository.validateTransition(currentStatusId, nextStatusId, user._id);
+    }
+}
+
+module.exports = StatusService;
+
+
+File: services\task.js
+----------------------------------------
+const BaseService = require('./baseService');
+
+class TaskService extends BaseService {
+    constructor(repository, commentRepository) {
+        console.log("Task Service created");
+        super(repository);
+        this.commentRepository = commentRepository;
+    }
+
+    getAllTasks(user) {
+        return this.repository.getAllTasks(user._id);
+    }
+
+    findById(id, user) {
+        return this.repository.findById(id, user._id);
+    }
+
+    async createTask(taskData, user, assignedTo = null) {
+        const task = await this.repository.createTask(taskData, user, assignedTo);
+        return task;
+    }
+
+    updateTask(id, task, user) {
+        return this.repository.updateTask(id, task, user._id);
+    }
+
+    updateTaskStatus(taskId, statusId, user) {
+        return this.repository.updateTaskStatus(taskId, statusId, user._id);
+    }
+
+    deleteTask(id, user) {
+        return this.repository.deleteTask(id, user._id);
+    }
+
+    addComment(taskId, user, commentText) {
+        return this.repository.addComment(taskId, user._id, commentText);
+    }
+
+}
+
+module.exports = TaskService;
+
+
+File: services\user.js
+----------------------------------------
+// services/userService.js
+const BaseService = require('./baseService');
+const { generateToken } = require('../util/jwt');
+
+class UserService extends BaseService {
+    constructor(repository) {
+        super(repository);
+    }
+
+    async registerUser(userData) {
+        const existingUser = await this.repository.findByUsername(userData.username);
+        if (existingUser) {
+            throw new Error('User already exists');
+        }
+        const newUser = await this.repository.createUser(userData);
+        const token = await generateToken(newUser._id);
+        return {
+            _id: newUser._id,
+            username: newUser.username,
+            roles: newUser.roles,
+            token: "Bearer " + token
+        };
+    }
+
+    async loginUser(username, password) {
+        const user = await this.repository.validateUser(username, password);
+        if (!user) {
+            throw new Error('Invalid username or password');
+        }
+
+        const token = await generateToken(user._id);
+        return {
+            _id: user._id,
+            username: user.username,
+            roles: user.roles,
+            token: "Bearer " + token
+        };
+    }
+
+    async getUserById(id) {
+        const user = await this.repository.findById(id);
+        if (!user) {
+            throw new Error('User not found');
+        }
+        return user;
+    }
+
+    async getAllUsers() {
+        return await this.repository.findAll();
+    }
+}
+
+module.exports = UserService;
+
+
+File: util\jwt.js
+----------------------------------------
+const jwt = require("jsonwebtoken");
+
+const generateToken = async (userId) => {
+    const token =  await jwt.sign({id: userId},process.env.JWT_SECRET,{
+        expiresIn: "60d"
+    })
+    console.log(`@!@!@!@! this is token`)
+    console.log(token);
+    return token
+
+}
+
+module.exports = { generateToken };
+

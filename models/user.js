@@ -5,16 +5,20 @@ const userSchema = new mongoose.Schema({
     username: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        trim: true
     },
     password: {
         type: String,
         required: true
     },
-    role: {
-        type: String,
-        enum:['user','admin'],
-        default: 'user'
+    roles: [{ // A user can have multiple roles
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Role'
+    }],
+    createdAt: {
+        type: Date,
+        default: Date.now
     }
 });
 

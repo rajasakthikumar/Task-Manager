@@ -1,54 +1,47 @@
 // services/statusService.js
 const BaseService = require('./baseService');
+const AuditLog = require('../models/auditLog');
 
 class StatusService extends BaseService {
-    constructor(repository) {
-        console.log("Status Service created");
+    constructor(repository, auditLogRepository) {
         super(repository);
+        this.auditLogRepository = auditLogRepository;
     }
 
-    getAllStatus(user) {
-        return this.repository.getAllStatus(user._id);
+    async getAllStatus(user) {
+        return await this.repository.getAllStatus(user._id);
     }
 
-    getDeletedStatuses(user) {
-        return this.repository.getDeletedStatuses(user._id);
+    async createStatus(statusData, user) {
+        return await this.repository.createStatus(statusData, user._id);
     }
 
-    findById(id, user) {
-        return this.repository.findById(id, user._id);
+    async deleteStatus(id, user) {
+        return await this.repository.deleteStatus(id, user._id);
     }
 
-    createStatus(status, user) {
-        return this.repository.createStatus(status, user);
+    async restoreStatus(id, user) {
+        return await this.repository.restoreStatus(id, user._id);
     }
 
-    deleteStatus(id, user) {
-        return this.repository.deleteStatus(id, user._id);
+    async hardDeleteStatus(id, user) {
+        return await this.repository.hardDeleteStatus(id, user._id);
     }
 
-    restoreStatus(id, user) {
-        return this.repository.restoreStatus(id, user._id);
+    async modifyStatus(id, statusData, user) {
+        return await this.repository.modifyStatus(id, statusData, user._id);
     }
 
-    hardDeleteStatus(id, user) {
-        return this.repository.hardDeleteStatus(id, user._id);
+    async addNextStatus(id, nextStatusId, user) {
+        return await this.repository.addNextStatus(id, nextStatusId, user._id);
     }
 
-    modifyStatus(id, statusData, user) {
-        return this.repository.modifyStatus(id, statusData, user._id);
+    async addPrevStatus(id, prevStatusId, user) {
+        return await this.repository.addPrevStatus(id, prevStatusId, user._id);
     }
 
-    addNextStatus(id, nextStatusId, user) {
-        return this.repository.addNextStatus(id, nextStatusId, user._id);
-    }
-
-    addPrevStatus(id, prevStatusId, user) {
-        return this.repository.addPrevStatus(id, prevStatusId, user._id);
-    }
-
-    validateTransition(currentStatusId, nextStatusId, user) {
-        return this.repository.validateTransition(currentStatusId, nextStatusId, user._id);
+    async validateTransition(currentStatusId, nextStatusId, user) {
+        return await this.repository.validateTransition(currentStatusId, nextStatusId, user._id);
     }
 }
 

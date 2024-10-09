@@ -1,22 +1,45 @@
+// repositories/baseRepositoryWithSoftDelete.js
+const BaseRepository = require('./baseRepository');
 
-const BaseRepository = require("./baseRepository");
-
-class BaseRepositorySoftDelete extends BaseRepository {
-
-    async updateById(id, data) {
-        delete data.isDeleted;
-        delete data.deletedAt;
-        return this.model.findByIdAndUpdate(id, data, {runValidators: true, new: true });
+class BaseRepositoryWithSoftDelete extends BaseRepository {
+    constructor(model) {
+        super(model);
     }
 
-    async deleteById(id) {
-        return this.model.findByIdAndUpdate(id, {
-            isDeleted: true,
-            deletedAt: Date.now(),
-            isActive: false
-        }, {
-            new: true
-        });
+    async softDelete(id) {
+        try {
+            const doc = await this.model.findById(id);
+            if (!doc) throw new Error(`${this.model.modelName} not found with id ${id}`);
+            doc.isDeleted = true;
+            doc.deletedDate = new Date();
+            await doc.save();
+            return doc;
+        } catch (error) {
+            throw new Error(`Error soft deleting ${this.model.modelName}: ${error.message}`);
+        }
+    }
+
+    async restore(id) {
+        try {
+            const doc = await this.model.findById(id);
+            if (!doc) throw new Error(`${this.model.modelName} not found with id ${id}`);
+            doc.isDeleted = false;
+            doc.deletedDate = null;
+            await doc.save();
+            return doc;
+        } catch (error) {
+            throw new Error(`Error restoring ${this.model.modelName}: ${error.message}`);
+        }
+    }
+
+    async findAllDeleted() {
+        try {
+            const docs = await this.model.find({ isDeleted: true });
+            return docs;
+        } catch (error) {
+            throw new Error(`Error fetching deleted ${this.model.modelName}s: ${error.message}`);
+        }
     }
 }
-module.exports = BaseRepositorySoftDelete;
+
+module.exports = BaseRepositoryWithSoftDelete;

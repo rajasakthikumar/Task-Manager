@@ -1,66 +1,55 @@
-
+// repositories/baseRepository.js
 class BaseRepository {
     constructor(model) {
         this.model = model;
     }
 
     async create(data) {
-        return this.model.create(data);
-    }
-
-    async insertMany(data) {
-        return this.model.insertMany(data);
+        try {
+            const doc = await this.model.create(data);
+            return doc;
+        } catch (error) {
+            throw new Error(`Error creating ${this.model.modelName}: ${error.message}`);
+        }
     }
 
     async findAll(filter = {}, options = {}) {
-        const {select, sort, populate} = options;
-        let query = this.model.find(filter);
-        if (select) query = query.select(select);
-        if (sort) query = query.sort(sort);
-        if (populate) query = query.populate(populate);
-        return query.exec();
+        try {
+            const docs = await this.model.find(filter)
+                .skip(options.skip || 0)
+                .limit(options.limit || 100)
+                .sort(options.sort || { createdAt: -1 });
+            return docs;
+        } catch (error) {
+            throw new Error(`Error fetching ${this.model.modelName}s: ${error.message}`);
+        }
     }
 
-    async findById(id, options = {}) {
-        const {select, sort, populate} = options;
-        let query = this.model.findById(id);
-        if (select) query = query.select(select);
-        if (sort) query = query.sort(sort);
-        if (populate) query = query.populate(populate);
-        return query.exec();
+    async findById(id, populate = '') {
+        try {
+            const doc = await this.model.findById(id).populate(populate);
+            return doc;
+        } catch (error) {
+            throw new Error(`${this.model.modelName} not found with id ${id}`);
+        }
     }
 
-    async updateById(id, data) {
-        return this.model.findByIdAndUpdate(id, data, {runValidators: true, new: true});
+    async update(id, data) {
+        try {
+            const updatedDoc = await this.model.findByIdAndUpdate(id, data, { new: true, runValidators: true });
+            return updatedDoc;
+        } catch (error) {
+            throw new Error(`Error updating ${this.model.modelName}: ${error.message}`);
+        }
     }
 
-    async deleteById(id) {
-        return this.model.findByIdAndDelete(id);
-    }
-
-    async findOne(filter = {}, options = {}) {
-        const { select, sort, populate } = options;
-        let query = this.model.findOne(filter);
-        if (select) query = query.select(select);
-        if (sort) query = query.sort(sort);
-        if (populate) query = query.populate(populate);
-        return query.exec();
-    }
-
-    async updateMany(filter, update, options) {
-        return this.model.updateMany(filter, update, options);
-    }
-
-    async updateOne(filter, update, options) {
-        return this.model.updateOne(filter, update, options);
-    }
-
-    async countDocuments(filter) {
-        return this.model.countDocuments(filter);
-    }
-
-    async deleteMany(filter) {
-        return this.model.deleteMany(filter);
+    async delete(id) {
+        try {
+            await this.model.findByIdAndDelete(id);
+            return true;
+        } catch (error) {
+            throw new Error(`Error deleting ${this.model.modelName}: ${error.message}`);
+        }
     }
 }
 

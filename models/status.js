@@ -4,17 +4,11 @@ const mongoose = require('mongoose');
 const statusSchema = new mongoose.Schema({
     statusName: {
         type: String,
-        required: true
+        required: true,
+        unique: true,
+        trim: true
     },
-    nextStatus: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Status',
-    }],
-    previousStatus: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Status',
-    }],
-    user: {
+    createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
@@ -23,12 +17,20 @@ const statusSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    deletedDate: {
+    deletedAt: Date,
+    nextStatuses: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Status'
+    }],
+    prevStatuses: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Status'
+    }],
+    createdAt: {
         type: Date,
-        default: null
-    }
+        default: Date.now
+    },
+    modifiedAt: Date
 });
 
-const Status = mongoose.model('Status', statusSchema);
-
-module.exports = Status;
+module.exports = mongoose.model('Status', statusSchema);

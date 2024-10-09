@@ -1,25 +1,23 @@
-const UserRepository = require("../repositories/user");
-const { generateToken } = require("../util/jwt");
-const BaseService = require("./baseService");
+// services/userService.js
+const BaseService = require('./baseService');
+const { generateToken } = require('../util/jwt');
 
 class UserService extends BaseService {
-    constructor(UserRepository) {
-        console.log('User Service created');
-        super(UserRepository);
+    constructor(repository) {
+        super(repository);
     }
 
     async registerUser(userData) {
-        console.log('User register starts')
         const existingUser = await this.repository.findByUsername(userData.username);
         if (existingUser) {
             throw new Error('User already exists');
         }
         const newUser = await this.repository.createUser(userData);
-        const token = await generateToken(newUser._id)
+        const token = await generateToken(newUser._id);
         return {
             _id: newUser._id,
             username: newUser.username,
-            role: newUser.role,
+            roles: newUser.roles,
             token: "Bearer " + token
         };
     }
@@ -30,11 +28,11 @@ class UserService extends BaseService {
             throw new Error('Invalid username or password');
         }
 
-        const token = await generateToken(user._id)
+        const token = await generateToken(user._id);
         return {
             _id: user._id,
             username: user.username,
-            role: user.role,
+            roles: user.roles,
             token: "Bearer " + token
         };
     }
@@ -47,26 +45,8 @@ class UserService extends BaseService {
         return user;
     }
 
-    async getUserByUsername(username) {
-        const user = await this.repository.findByUsername(username);
-        if (!user) {
-            throw new Error('User not found');
-        }
-        return user;
-    }
-
-    async getUserByRole(username, role) {
-        const user = await this.repository.findUser(username, role);
-        if (!user) {
-            throw new Error(`User with username ${username} and role ${role} does not exist`);
-        }
-        return user;
-    }
-
     async getAllUsers() {
-        const users = await this.repository.getAllUsers();
-        console.log(users);
-        return users;
+        return await this.repository.findAll();
     }
 }
 

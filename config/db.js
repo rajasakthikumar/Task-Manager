@@ -1,28 +1,13 @@
-
 const mongoose = require('mongoose');
+const dotenv = require('dotenv');
 
+dotenv.config();
+const uri = process.env.DBURI;
 
-const connectDB = async () => {
-    console.log(process.env.DBURI)
-    try {
-    const conn = await mongoose.connect(process.env.DBURI, {
-        autoIndex: true,
-        dbName: process.env.MONGO_DATABASE_NAME,
-        retryWrites: true,
-        w:process.env.DB_W,
-        appName: process.env.DB_APPNAME,
-
-    });
-
-    if (conn) {
-        console.log(`MongoDB Connected: ${conn.connection.host} with Database : ${process.env.MONGO_DATABASE_NAME}`);
-    }
-
-} catch (error) {
-    console.error('Error connecting to MongoDB:', error);
-}
+if (!uri) {
+  throw new Error('MongoDB URI is missing. Make sure MONGODB_URI is defined.');
 }
 
-connectDB()
-
-module.exports = connectDB;
+mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('Error connecting to MongoDB:', err));
