@@ -1,17 +1,14 @@
-const BaseService = require('./baseService');
+const BaseRepository = require('./baseRepository');
+const Role = require('../models/role');
 
-class RoleService extends BaseService {
-    constructor(repository) {
-        super(repository);
+class RoleRepository extends BaseRepository {
+    constructor() {
+        super(Role);
     }
 
-    async createRole(roleData) {
-        const existingRole = await this.repository.findByName(roleData.name);
-        if (existingRole) {
-            throw new Error('Role already exists');
-        }
-        return await this.repository.create(roleData);
+    async findByName(name) {
+        return await this.model.findOne({ name });
     }
 }
 
-module.exports = RoleService;
+module.exports = RoleRepository;

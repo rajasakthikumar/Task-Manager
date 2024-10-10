@@ -4,39 +4,31 @@ const { protect, authorize } = require('../middleware/auth');
 const { permissionsCheck } = require('../middleware/permissions');
 const router = express.Router();
 
-console.log("Task router created");
+console.log('Task router created');
 
-router.get('/tasks', protect, permissionsCheck(['VIEW_TASKS']), (req, res, next) => {
-    taskController.getAllTasks(req, res, next);
-});
+router.get('/', protect, permissionsCheck(['VIEW_TASKS']), taskController.getAllTasks);
+router.get('/assigned', protect, taskController.getTasksAssignedTo);
+router.get('/created', protect, taskController.getTasksCreatedBy);
+router.get('/deleted', protect, taskController.getDeletedTasks);
+router.get('/overdue', protect, taskController.getOverdueTasks);
+router.get('/due-today', protect, taskController.getTasksDueToday);
+router.get('/priority/:priority', protect, taskController.getTasksByPriority);
+router.get('/status/:statusId', protect, taskController.getTasksByStatus);
+router.get('/search/:searchTerm', protect, taskController.searchTasks);
+router.get('/:id', protect, taskController.getTaskById);
 
-router.get('/tasks/:id', protect, (req, res, next) => {
-    taskController.getTaskById(req, res, next);
-});
+router.post('/', protect, permissionsCheck(['CREATE_TASK']), taskController.createTask);
+router.post('/:id/assign', protect, taskController.assignTask);
+router.post('/:id/unassign', protect, taskController.unassignTask);
+router.post('/:id/restore', protect, taskController.restoreTask);
+router.post('/date-range', protect, taskController.getTasksByDateRange);
 
-router.post('/tasks', protect, permissionsCheck(['CREATE_TASK']), (req, res, next) => {
-    taskController.createTask(req, res, next);
-});
+router.put('/:id', protect, permissionsCheck(['UPDATE_TASK']), taskController.updateTask);
+router.put('/:id/end-date', protect, taskController.updateTaskEndDate);
+router.put('/:id/priority', protect, taskController.updateTaskPriority);
+router.put('/:taskId/status/:statusId', protect, taskController.updateTaskStatus);
 
-router.put('/tasks/:id', protect, permissionsCheck(['UPDATE_TASK']), (req, res, next) => {
-    taskController.updateTask(req, res, next);
-});
-
-router.put('/tasks/:taskId/status/:statusId', protect, (req, res, next) => {
-    taskController.updateTaskStatus(req, res, next);
-});
-
-router.delete('/tasks/:id', protect, permissionsCheck(['DELETE_TASK']), (req, res, next) => {
-    taskController.deleteTask(req, res, next);
-});
-
-router.post('/tasks/:taskId/comments', protect, (req, res, next) => {
-    taskController.addComment(req, res, next);
-});
-
-
-router.post('/tasks', protect, authorize('admin', 'manager'), (req, res, next) => {
-    taskController.createTask(req, res, next);
-});
+router.delete('/:id', protect, permissionsCheck(['DELETE_TASK']), taskController.deleteTask);
+router.delete('/:id/soft-delete', protect, taskController.softDeleteTask);
 
 module.exports = router;

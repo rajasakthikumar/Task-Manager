@@ -1,68 +1,166 @@
 const BaseService = require('./baseService');
-const {sendEmail} = require('./email');
+const { sendEmail } = require('./email');
+const UserRepository = require('../repositories/user');
+const Status = require('../models/status');
+
 class TaskService extends BaseService {
     constructor(repository, commentRepository) {
-        console.log("Task Service created");
+        console.log('Task Service created');
         super(repository);
         this.commentRepository = commentRepository;
+        this.userRepository = new UserRepository();
     }
 
-    getAllTasks(user) {
-        return this.repository.getAllTasks(user._id);
+    async getAllTasks(user) {
+        return await this.repository.getAllTasks(user._id);
     }
 
-    findById(id, user) {
-        return this.repository.findById(id, user._id);
+    async findById(id, user) {
+        return await this.repository.findById(id, user._id);
     }
 
-    
+    async createTask(taskData, user, assignedToId = null) {
+        let assignedTo = null;
+        if (assignedToId) {
+            assignedTo = await this.userRepository.findById(assignedToId);
+            if (!assignedTo) {
+                throw new Error('Assigned user not found');
+            }
+        }
 
-    updateTask(id, task, user) {
-        return this.repository.updateTask(id, task, user._id);
-    }
+        const newTask = await this.repository.createTask(
+            taskData,
+            user,
+            assignedTo
+        );
 
-   
-
-    deleteTask(id, user) {
-        return this.repository.deleteTask(id, user._id);
-    }
-
-    addComment(taskId, user, commentText) {
-        return this.repository.addComment(taskId, user._id, commentText);
-    }
-
-
-    async createTask(task, user, assignedTo = null) {
-        const newTask = await this.taskRepository.createTask(task, user, assignedTo);
-    
         if (assignedTo) {
-          await sendEmail(assignedTo.email, 'New Task Assigned', `You have been assigned a new task: ${task.title}`);
+            await sendEmail(
+                assignedTo.email,
+                'New Task Assigned',
+                `You have been assigned a new task: ${taskData.title}`
+            );
         }
-    
+
         return newTask;
-      }
-    
-      async assignTask(id, userId, assignedToId) {
-        const updatedTask = await this.taskRepository.assignTask(id, userId, assignedToId);
-    
-        const assignedToUser = await this.taskRepository.getUserById(assignedToId);  // Assuming a method to get user by ID
-        if (assignedToUser) {
-          await sendEmail(assignedToUser.email, 'Task Assigned', `You have been assigned a task: ${updatedTask.title}`);
-        }
-    
-        return updatedTask;
-      }
-    
-      async updateTaskStatus(taskId, statusId, userId) {
-        const updatedTask = await this.taskRepository.updateTaskStatus(taskId, statusId, userId);
-    
-        const taskOwner = await this.taskRepository.getUserById(updatedTask.user);
+    }
+
+    async updateTask(id, task, user) {
+        return await this.repository.updateTask(id, task, user._id);
+    }
+
+    async updateTaskStatus(taskId, statusId, user) {
+        const updatedTask = await this.repository.updateTaskStatus(
+            taskId,
+            statusId,
+            user._id
+        );
+
+        const taskOwner = await this.userRepository.findById(updatedTask.user);
         if (taskOwner) {
-          await sendEmail(taskOwner.email, 'Task Status Updated', `The status of your task "${updatedTask.title}" has been updated to "${updatedTask.status.statusName}".`);
+            const status = await Status.findById(statusId);
+            await sendEmail(
+                taskOwner.email,
+                'Task Status Updated',
+                `The status of your task "${updatedTask.title}" has been updated to "${status.statusName}".`
+            );
         }
-    
+
         return updatedTask;
-      }
+    }
+
+    async deleteTask(id, user) {
+        return await this.repository.deleteTask(id, user._id);
+    }
+
+    async assignTask(id, userId, assignedToId) {
+        const updatedTask = await this.repository.assignTask(
+            id,
+            userId,
+            assignedToId
+        );
+
+        const assignedToUser = await this.userRepository.findById(
+            assignedToId
+        );
+        if (assignedToUser) {
+            await sendEmail(
+                assignedToUser.email,
+                'Task Assigned',
+                `You have been assigned a task: ${updatedTask.title}`
+            );
+        }
+
+        return updatedTask;
+    }
+
+    async addComment(taskId, user, commentText) {
+        return await this.repository.addComment(taskId, user._id, commentText);
+    }
+
+    async getTasksByPriority(user, priority) {
+        return await this.repository.getTasksByPriority(user._id, priority);
+    }
+
+    async updateTaskPriority(id, user, priority) {
+        return await this.repository.updateTaskPriority(id, user._id, priority);
+    }
+
+    async getTasksAssignedTo(user) {
+        return await this.repository.getTasksAssignedTo(user._id);
+    }
+
+    async getTasksCreatedBy(user) {
+        return await this.repository.getTasksCreatedBy(user._id);
+    }
+
+    async softDeleteTask(id, user) {
+        return await this.repository.softDeleteTask(id, user._id);
+    }
+
+    async restoreTask(id, user) {
+        return await this.repository.restoreTask(id, user._id);
+    }
+
+    async getDeletedTasks(user) {
+        return await this.repository.getDeletedTasks(user._id);
+    }
+
+    async getTasksByStatus(user, statusId) {
+        return await this.repository.getTasksByStatus(user._id, statusId);
+    }
+
+    async getTasksByDateRange(user, startDate, endDate) {
+        return await this.repository.getTasksByDateRange(
+            user._id,
+            startDate,
+            endDate
+        );
+    }
+
+    async searchTasks(user, searchTerm) {
+        return await this.repository.searchTasks(user._id, searchTerm);
+    }
+
+    async getOverdueTasks(user) {
+        return await this.repository.getOverdueTasks(user._id);
+    }
+
+    async getTasksDueToday(user) {
+        return await this.repository.getTasksDueToday(user._id);
+    }
+
+    async unassignTask(id, user) {
+        return await this.repository.unassignTask(id, user._id);
+    }
+
+    async updateTaskEndDate(id, user, endDate) {
+        return await this.repository.updateTaskEndDate(
+            id,
+            user._id,
+            endDate
+        );
+    }
 }
 
 module.exports = TaskService;

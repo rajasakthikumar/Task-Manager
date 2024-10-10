@@ -1,6 +1,4 @@
-// services/statusService.js
 const BaseService = require('./baseService');
-const AuditLog = require('../models/auditLog');
 
 class StatusService extends BaseService {
     constructor(repository, auditLogRepository) {
@@ -10,6 +8,10 @@ class StatusService extends BaseService {
 
     async getAllStatus(user) {
         return await this.repository.getAllStatus(user._id);
+    }
+
+    async getDeletedStatuses(user) {
+        return await this.repository.findAllDeleted();
     }
 
     async createStatus(statusData, user) {

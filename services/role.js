@@ -1,4 +1,3 @@
-// services/roleService.js
 const BaseService = require('./baseService');
 
 class RoleService extends BaseService {
@@ -12,6 +11,14 @@ class RoleService extends BaseService {
             throw new Error('Role already exists');
         }
         return await this.repository.create(roleData);
+    }
+
+    async getAllRoles() {
+        return await this.repository.findAll();
+    }
+
+    async getRoleById(id) {
+        return await this.repository.findById(id);
     }
 }
 

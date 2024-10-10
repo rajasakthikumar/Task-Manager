@@ -8,13 +8,12 @@ class AuditLogRepository extends BaseRepository {
         super(AuditLog);
     }
 
-    async getLogs(filter = {}, options = {}) {
+    async getLogs(filter = {}) {
         try {
             const logs = await this.model.find(filter)
                 .populate('performedBy', 'username roles')
-                .sort({ timestamp: -1 })
-                .skip(options.skip || 0)
-                .limit(options.limit || 20);
+                .sort({ timestamp: -1 });
+                
             return logs;
         } catch (error) {
             throw new Error(`Error fetching audit logs: ${error.message}`);

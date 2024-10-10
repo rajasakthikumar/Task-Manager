@@ -1,4 +1,3 @@
-// repositories/baseRepositoryWithSoftDelete.js
 const BaseRepository = require('./baseRepository');
 
 class BaseRepositoryWithSoftDelete extends BaseRepository {

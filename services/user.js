@@ -1,4 +1,3 @@
-// services/userService.js
 const BaseService = require('./baseService');
 const { generateToken } = require('../util/jwt');
 
@@ -17,8 +16,9 @@ class UserService extends BaseService {
         return {
             _id: newUser._id,
             username: newUser.username,
+            email: newUser.email,
             roles: newUser.roles,
-            token: "Bearer " + token
+            token: 'Bearer ' + token
         };
     }
 
@@ -32,13 +32,14 @@ class UserService extends BaseService {
         return {
             _id: user._id,
             username: user.username,
+            email: user.email,
             roles: user.roles,
-            token: "Bearer " + token
+            token: 'Bearer ' + token
         };
     }
 
     async getUserById(id) {
-        const user = await this.repository.findById(id);
+        const user = await this.repository.findById(id).populate('roles');
         if (!user) {
             throw new Error('User not found');
         }
@@ -46,7 +47,7 @@ class UserService extends BaseService {
     }
 
     async getAllUsers() {
-        return await this.repository.findAll();
+        return await this.repository.findAll({}, { populate: 'roles' });
     }
 
     async assignRole(userId, roleId) {
@@ -54,12 +55,12 @@ class UserService extends BaseService {
         if (!user) {
             throw new Error('User not found');
         }
-    
+
         if (!user.roles.includes(roleId)) {
             user.roles.push(roleId);
             await user.save();
         }
-    
+
         return user;
     }
 }

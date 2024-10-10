@@ -1,4 +1,3 @@
-// services/auditLogService.js
 const BaseService = require('./baseService');
 
 class AuditLogService extends BaseService {

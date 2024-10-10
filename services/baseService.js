@@ -1,4 +1,3 @@
-// services/baseService.js
 class BaseService {
     constructor(repository) {
         this.repository = repository;

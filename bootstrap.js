@@ -14,6 +14,7 @@ const RoleController = require('./controllers/role');
 const AuditLogRepository = require('./repositories/auditLog');
 const AuditLogService = require('./services/auditLog');
 const CommentController = require('./controllers/comment');
+const CommentService = require('./services/comment');
 
 const taskRepository = new TaskRepository();
 const commentRepository = new CommentRepository();

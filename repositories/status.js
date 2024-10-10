@@ -10,14 +10,12 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
     }
 
     async getAllStatus(userId) {
-        // Assuming any authenticated user can view all statuses
         return await this.model.find({}).populate('nextStatuses').populate('prevStatuses');
     }
 
     async createStatus(statusData, userId) {
         const newStatus = await this.model.create(statusData);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Created',
             performedBy: userId,
@@ -35,7 +33,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
         await this.softDelete(id);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Soft Deleted',
             performedBy: userId,
@@ -50,7 +47,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
         const status = await this.restore(id);
         if (!status) throw new Error('Status not found');
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Restored',
             performedBy: userId,
@@ -67,7 +63,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
         await this.delete(id);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Permanently Deleted',
             performedBy: userId,
@@ -81,7 +76,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
     async modifyStatus(id, statusData, userId) {
         const status = await this.update(id, statusData);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Modified',
             performedBy: userId,
@@ -100,7 +94,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
         status.nextStatuses.push(nextStatusId);
         await status.save();
 
-        // Create audit log
         await AuditLog.create({
             action: 'Next Status Added',
             performedBy: userId,
@@ -119,7 +112,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
         status.prevStatuses.push(prevStatusId);
         await status.save();
 
-        // Create audit log
         await AuditLog.create({
             action: 'Previous Status Added',
             performedBy: userId,
@@ -139,7 +131,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
             throw new Error('Invalid status transition');
         }
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Transition Validated',
             performedBy: userId,
@@ -151,7 +142,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
         return true;
     }
 
-    // Additional methods if needed
 }
 
 module.exports = StatusRepository;

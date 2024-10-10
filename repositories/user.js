@@ -1,18 +1,16 @@
-// repositories/userRepository.js
 const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
 const AuditLog = require('../models/auditLog');
 
 class UserRepository extends BaseRepository {
     constructor() {
-        console.log("User Repository created");
+        console.log('User Repository created');
         super(User);
     }
 
     async findByUsername(username) {
         try {
-            const user = await this.model.findOne({ username });
-            return user;
+            return await this.model.findOne({ username });
         } catch (error) {
             throw new Error(`Error finding user by username: ${error.message}`);
         }
@@ -27,7 +25,7 @@ class UserRepository extends BaseRepository {
     }
 
     async createUser(userData) {
-        const newUser = await this.model.create(userData);
+        const newUser = await this.create(userData);
 
         // Create audit log
         await AuditLog.create({
@@ -44,8 +42,6 @@ class UserRepository extends BaseRepository {
     async getAllAdmins() {
         return await this.model.find({ roles: 'admin' }).select('username roles');
     }
-
-    // Additional methods if needed
 }
 
 module.exports = UserRepository;
