@@ -48,5 +48,4 @@ const upload = multer({
 
 module.exports = {
     uploadSingle: upload.single('attachment'),
-    uploadMultiple: upload.array('attachments', 5) // Limit to 5 files
 };
