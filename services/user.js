@@ -1,7 +1,7 @@
 const BaseService = require('./baseService');
 const { generateToken } = require('../util/jwt');
 const CustomError = require('../util/customError');
-const { populateRolesAndPermissions } = require('../utils/populate'); 
+const { populateRolesAndPermissions } = require('../util/populate'); 
 
 class UserService extends BaseService {
     constructor(userRepository, roleRepository) {

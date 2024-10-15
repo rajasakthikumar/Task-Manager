@@ -25,7 +25,7 @@ const userRepository = new UserRepository();
 const roleRepository = new RoleRepository();
 const auditLogRepository = new AuditLogRepository();
 
-const taskService = new TaskService(taskRepository, commentRepository);
+const taskService = new TaskService(taskRepository, commentRepository, userRepository);
 const statusService = new StatusService(statusRepository, auditLogRepository);
 const userService = new UserService(userRepository,roleRepository);
 const roleService = new RoleService(roleRepository);
@@ -586,6 +586,7 @@ app.use((err, req, res, next) => {
     }
 });
 
+const PORT = process.env.PORT || 3000;
 const startServer = async () => {
     try {
         await require('./config/db'); 
@@ -1062,9 +1063,9 @@ module.exports = mongoose.model('User', userSchema);
 
 File: repositories\auditLog.js
 ----------------------------------------
-// repositories/auditLogRepository.js
 const BaseRepository = require('./baseRepository');
 const AuditLog = require('../models/auditLog');
+const CustomError = require('../util/customError');
 
 class AuditLogRepository extends BaseRepository {
     constructor() {
@@ -1080,7 +1081,7 @@ class AuditLogRepository extends BaseRepository {
                 
             return logs;
         } catch (error) {
-            throw new Error(`Error fetching audit logs: ${error.message}`);
+            throw new CustomError(`Error fetching audit logs: ${error.message}`);
         }
     }
 }
@@ -1497,22 +1498,28 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         return task;
     }
 
-    async createTask(task, user, assignedTo = null) {
-        const openStatus = await Status.findOne({ _id: task.status });
+    async createTask(taskData, user, assignedTo = null) {
+        const openStatus = await Status.findOne({ _id: taskData.status });
         if (!openStatus) {
             throw new CustomError('Open status not found');
         }
-
+    
+        console.log('@!@!@!@! openStatus ', openStatus);
+        console.log('@!@!@!@!@!@! TaskRepository');
+    
         const taskToCreate = {
             ...taskData,
-            status: status._id,
+            status: openStatus._id,  // Corrected from 'status._id' to 'openStatus._id'
             user: user._id,
             assignedTo: assignedTo ? assignedTo._id : null,
             createdDate: new Date()
         };
-
+    
+        console.log('@!@!@!@! taskToCreate ', taskToCreate);
+    
         const newTask = await this.model.create(taskToCreate);
-
+        console.log('@!@!@!@! newTask ', newTask);
+    
         await AuditLog.create({
             action: 'Task Created',
             performedBy: user._id,
@@ -1520,14 +1527,14 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             entityId: newTask._id,
             changes: taskData
         });
-
+    
         const populatedTask = await this.model
             .findById(newTask._id)
             .populate('status');
-
+    
         return populatedTask;
     }
-
+    
     async updateTask(id, updatedTask, userId) {
         const task = await this.findById(id, userId);
 
@@ -2039,10 +2046,8 @@ const limiter = require('../middleware/rateLimit');
 const router = express.Router();
 console.log('User router created');
 
-// Register a new user (public)
 router.post('/register', limiter, userController.registerUser);
 
-// Login user (public)
 router.post('/login', limiter, userController.loginUser);
 
 router.get('/:id', protect, userController.getUserById);
@@ -2369,13 +2374,14 @@ const BaseService = require('./baseService');
 const { sendEmail } = require('./email');
 const UserRepository = require('../repositories/user');
 const Status = require('../models/status');
+const CustomError = require('../util/customError');
 
 class TaskService extends BaseService {
-    constructor(repository, commentRepository) {
+    constructor(repository, commentRepository,userRepository) {
         console.log('Task Service created');
         super(repository);
         this.commentRepository = commentRepository;
-        this.userRepository = new UserRepository();
+        this.userRepository = userRepository;
     }
 
     async getAllTasks(user) {
@@ -2391,7 +2397,7 @@ class TaskService extends BaseService {
         if (assignedToId) {
             assignedTo = await this.userRepository.findById(assignedToId);
             if (!assignedTo) {
-                throw new Error('Assigned user not found');
+                throw new CustomError('Assigned user not found');
             }
         }
 
@@ -2538,6 +2544,7 @@ File: services\user.js
 const BaseService = require('./baseService');
 const { generateToken } = require('../util/jwt');
 const CustomError = require('../util/customError');
+const { populateRolesAndPermissions } = require('../util/populate'); 
 
 class UserService extends BaseService {
     constructor(userRepository, roleRepository) {
@@ -2554,18 +2561,14 @@ class UserService extends BaseService {
         if (!userData.roles) {
             const role = await this.roleRepository.findByName('user');
             if (!role) {
-                throw new CustomError('user role not found', 500);
+                throw new CustomError('User role not found', 500);
             }
             userData.roles = role._id; 
         }
 
-        await newUser.populate({
-            path: 'roles',
-            populate: {
-                path: 'permissions',
-                model: 'Permission'
-            }
-        });
+        const newUser = await this.repository.create(userData);
+        
+        await populateRolesAndPermissions(newUser);
 
         const token = await generateToken(newUser._id);
 
@@ -2583,19 +2586,11 @@ class UserService extends BaseService {
         if (!user) {
             throw new CustomError('Invalid username or password');
         }
-    
-         const foundUser = await this.repository.model
-        .findById(user._id)
-        .populate({
-            path: 'roles',
-            populate: {
-                path: 'permissions',
-                model: 'Permission'
-            }
-        });
-    
+
+        const foundUser = await populateRolesAndPermissions(this.repository.model.findById(user._id));
+
         const token = await generateToken(foundUser._id);
-    
+
         return {
             _id: foundUser._id,
             username: foundUser.username,
@@ -2604,10 +2599,10 @@ class UserService extends BaseService {
             token: 'Bearer ' + token
         };
     }
-    
 
     async getUserById(id) {
-        const user = await this.repository.findById(id).populate('roles');
+        const query = this.repository.model.findById(id);
+        const user = await populateRolesAndPermissions(query);
         if (!user) {
             throw new CustomError('User not found');
         }
@@ -2615,47 +2610,38 @@ class UserService extends BaseService {
     }
 
     async getAllUsers() {
-        return await this.repository.findAll({}, { populate: 'roles' });
+        const query = this.repository.model.find({});
+        return await populateRolesAndPermissions(query);
     }
 
     async assignRole(userId, roleId) {
         try {
-            
             const user = await this.repository.findById(userId);
             if (!user) {
                 throw new CustomError('User not found');
             }
-    
+
             const role = await this.roleRepository.findById(roleId);
             if (!role) {
                 throw new CustomError('Role not found');
             }
-    
+
             if (!user.roles.includes(roleId)) {
                 user.roles.push(roleId);
-    
+
                 try {
                     await user.save();
-                    console.log('@!@!@!@! Roles assigning completed');
+                    console.log('Roles assigned successfully');
                 } catch (error) {
                     console.error('Error while saving user:', error);
                     throw new CustomError('Error while saving user role');
                 }
             } else {
-                console.log('@!@!@!@! Role already assigned to the user');
+                console.log('Role already assigned to the user');
             }
-    
-            const savedUser =  await this.repository.model
-            .findById(userId)
-            .populate({
-                path: 'roles',
-                populate: {
-                    path: 'permissions',
-                    model: 'Permission'
-                }
-            });
 
-            return await savedUser.populate('roles');
+            const savedUser = await populateRolesAndPermissions(this.repository.model.findById(userId));
+            return savedUser;
         } catch (error) {
             console.error('Error in assignRole function:', error);
             throw new CustomError('Internal Server Error');
@@ -2703,4 +2689,20 @@ const generateToken = async userId => {
 
 module.exports = { generateToken };
 
+
+File: util\populate.js
+----------------------------------------
+const populateRolesAndPermissions = (query) => {
+    return query.populate({
+      path: 'roles',
+      populate: {
+        path: 'permissions',
+        model: 'Permission',
+      },
+    });
+  };
+  
+  module.exports = {
+    populateRolesAndPermissions,
+  };
 

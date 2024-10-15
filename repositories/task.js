@@ -58,22 +58,28 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         return task;
     }
 
-    async createTask(task, user, assignedTo = null) {
-        const openStatus = await Status.findOne({ _id: task.status });
+    async createTask(taskData, user, assignedTo = null) {
+        const openStatus = await Status.findOne({ _id: taskData.status });
         if (!openStatus) {
             throw new CustomError('Open status not found');
         }
-
+    
+        console.log('@!@!@!@! openStatus ', openStatus);
+        console.log('@!@!@!@!@!@! TaskRepository');
+    
         const taskToCreate = {
             ...taskData,
-            status: status._id,
+            status: openStatus._id,  // Corrected from 'status._id' to 'openStatus._id'
             user: user._id,
             assignedTo: assignedTo ? assignedTo._id : null,
             createdDate: new Date()
         };
-
+    
+        console.log('@!@!@!@! taskToCreate ', taskToCreate);
+    
         const newTask = await this.model.create(taskToCreate);
-
+        console.log('@!@!@!@! newTask ', newTask);
+    
         await AuditLog.create({
             action: 'Task Created',
             performedBy: user._id,
@@ -81,14 +87,14 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             entityId: newTask._id,
             changes: taskData
         });
-
+    
         const populatedTask = await this.model
             .findById(newTask._id)
             .populate('status');
-
+    
         return populatedTask;
     }
-
+    
     async updateTask(id, updatedTask, userId) {
         const task = await this.findById(id, userId);
 
