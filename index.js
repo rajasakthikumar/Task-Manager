@@ -1,7 +1,6 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const helmet = require('helmet');
-const morgan = require('morgan');
+
 const CustomError = require('./util/customError');
 const taskRoutes = require('./routes/task');
 const statusRoutes = require('./routes/status');

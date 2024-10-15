@@ -1,5 +1,6 @@
 const Comment = require('../models/comment');
 const BaseRepository = require('./baseRepository');
+const CustomError = require('../util/customError')
 
 class CommentRepository extends BaseRepository {
     constructor() {
@@ -9,7 +10,7 @@ class CommentRepository extends BaseRepository {
     async addAttachments(commentId, attachments) {
         const comment = await this.findById(commentId);
         if (!comment) {
-            throw new Error('Comment not found');
+            throw new CustomError('Comment not found');
         }
 
         comment.attachments.push(...attachments);

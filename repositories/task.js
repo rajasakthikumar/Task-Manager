@@ -3,6 +3,7 @@ const Task = require('../models/task');
 const Status = require('../models/status');
 const Comment = require('../models/comment');
 const AuditLog = require('../models/auditLog');
+const CustomError = require('../util/customError');
 const User = require('../models/user');
 
 class TaskRepository extends BaseRepositoryWithSoftDelete {
@@ -28,10 +29,10 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
                 .populate('status');
 
             if (!tasks || tasks.length === 0)
-                throw new Error('Tasks not found or unauthorized');
+                throw new CustomError('Tasks not found or unauthorized');
             return tasks;
         } catch (error) {
-            throw new Error(`Error fetching tasks: ${error.message}`);
+            throw new CustomError(`Error fetching tasks: ${error.message}`);
         }
     }
 
@@ -53,14 +54,14 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
         console.log(`@!@!@!@! this is task ${task}`);
 
-        if (!task) throw new Error('Task not found or unauthorized');
+        if (!task) throw new CustomError('Task not found or unauthorized');
         return task;
     }
 
     async createTask(task, user, assignedTo = null) {
         const openStatus = await Status.findOne({ _id: task.status });
         if (!openStatus) {
-            throw new Error('Open status not found');
+            throw new CustomError('Open status not found');
         }
 
         const taskToCreate = {
@@ -95,7 +96,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             task.user.toString() !== userId.toString() &&
             task.assignedTo.toString() !== userId.toString()
         ) {
-            throw new Error(
+            throw new CustomError(
                 'Only the creator or assigned user can update this task'
             );
         }
@@ -119,10 +120,10 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         const task = await this.findById(taskId, userId);
 
         const status = await Status.findById(statusId);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         if (!(await this.validateStatusTransition(task.status, statusId))) {
-            throw new Error('Invalid status transition');
+            throw new CustomError('Invalid status transition');
         }
 
         task.status = status._id;
@@ -145,7 +146,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
     async validateStatusTransition(currentStatusId, nextStatusId) {
         const currentStatus = await Status.findById(currentStatusId);
-        if (!currentStatus) throw new Error('Current status not found');
+        if (!currentStatus) throw new CustomError('Current status not found');
 
         const isValidTransition = currentStatus.nextStatuses.includes(
             nextStatusId
@@ -155,7 +156,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
     async assignTask(id, userId, assignedToId) {
         const task = await this.model.findOne({ _id: id, user: userId });
-        if (!task) throw new Error('Task not found or unauthorized');
+        if (!task) throw new CustomError('Task not found or unauthorized');
 
         task.assignedTo = assignedToId;
 
@@ -206,7 +207,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             $or: [{ user: userId }, { assignedTo: userId }]
         });
 
-        if (!task) throw new Error('Task not found or unauthorized');
+        if (!task) throw new CustomError('Task not found or unauthorized');
 
         task.isDeleted = false;
         task.deletedDate = null;
@@ -225,14 +226,14 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         const task = await this.model.findById(taskId);
 
         if (!task) {
-            throw new Error('Task not found');
+            throw new CustomError('Task not found');
         }
 
         if (
             task.user.toString() !== userId.toString() &&
             task.assignedTo.toString() !== userId.toString()
         ) {
-            throw new Error(
+            throw new CustomError(
                 'Only the creator or assigned user can comment on this task'
             );
         }
@@ -260,7 +261,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
     async getTasksByPriority(userId, priority) {
         const validPriorities = ['low', 'medium', 'high'];
         if (!validPriorities.includes(priority)) {
-            throw new Error('Invalid priority value');
+            throw new CustomError('Invalid priority value');
         }
 
         return await this.model
@@ -276,7 +277,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
         const validPriorities = ['low', 'medium', 'high'];
         if (!validPriorities.includes(priority)) {
-            throw new Error('Invalid priority value');
+            throw new CustomError('Invalid priority value');
         }
 
         task.priority = priority;
@@ -355,7 +356,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             statusName: 'completed'
         });
 
-        if (!completedStatus) throw new Error('Completed status not found');
+        if (!completedStatus) throw new CustomError('Completed status not found');
 
         return await this.model
             .find({
@@ -383,7 +384,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
     async unassignTask(id, userId) {
         const task = await this.model.findOne({ _id: id, user: userId });
-        if (!task) throw new Error('Task not found or unauthorized');
+        if (!task) throw new CustomError('Task not found or unauthorized');
 
         task.assignedTo = null;
 

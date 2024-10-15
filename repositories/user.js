@@ -1,13 +1,11 @@
 const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
 const AuditLog = require('../models/auditLog');
-const payment = require('../models/payment');
 const CustomError = require('../util/customError');
 
 class UserRepository extends BaseRepository {
     constructor() {
         console.log('User Repository created');
-        // this.Payment = Payment;
         super(User);
     }
 
@@ -15,7 +13,7 @@ class UserRepository extends BaseRepository {
         try {
             return await this.model.findOne({ username });
         } catch (error) {
-            throw new Error(`Error finding user by username: ${error.message}`);
+            throw new CustomError(`Error finding user by username: ${error.message}`);
         }
     }
 

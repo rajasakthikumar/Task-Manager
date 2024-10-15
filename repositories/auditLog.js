@@ -1,6 +1,6 @@
-// repositories/auditLogRepository.js
 const BaseRepository = require('./baseRepository');
 const AuditLog = require('../models/auditLog');
+const CustomError = require('../util/customError');
 
 class AuditLogRepository extends BaseRepository {
     constructor() {
@@ -16,7 +16,7 @@ class AuditLogRepository extends BaseRepository {
                 
             return logs;
         } catch (error) {
-            throw new Error(`Error fetching audit logs: ${error.message}`);
+            throw new CustomError(`Error fetching audit logs: ${error.message}`);
         }
     }
 }

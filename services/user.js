@@ -5,7 +5,7 @@ const CustomError = require('../util/customError');
 class UserService extends BaseService {
     constructor(userRepository, roleRepository) {
         super(userRepository);
-        this.roleRepository = roleRepository; // Injecting roleRepository here
+        this.roleRepository = roleRepository; 
     }
 
     async registerUser(userData) {
@@ -70,7 +70,14 @@ class UserService extends BaseService {
     
 
     async getUserById(id) {
-        const user = await this.repository.findById(id).populate('roles');
+        const user = await this.repository.findById(id).populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
+
         if (!user) {
             throw new CustomError('User not found');
         }
@@ -78,8 +85,17 @@ class UserService extends BaseService {
     }
 
     async getAllUsers() {
-        return await this.repository.findAll({}, { populate: 'roles' });
-    }
+  return await this.repository.findAll({}, {
+    populate: {
+      path: 'roles',
+      populate: {
+        path: 'permissions',
+        model: 'Permission',
+      },
+    },
+  });
+}
+
 
     async assignRole(userId, roleId) {
         try {
@@ -117,8 +133,8 @@ class UserService extends BaseService {
                     model: 'Permission'
                 }
             });
-            
-            return await savedUser.populate('roles');
+
+            return await savedUser
         } catch (error) {
             console.error('Error in assignRole function:', error);
             throw new CustomError('Internal Server Error');

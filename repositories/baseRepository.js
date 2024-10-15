@@ -52,7 +52,7 @@ class BaseRepository {
             );
             return updatedDoc;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `Error updating ${this.model.modelName}: ${error.message}`
             );
         }
@@ -63,7 +63,7 @@ class BaseRepository {
             await this.model.findByIdAndDelete(id);
             return true;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `Error deleting ${this.model.modelName}: ${error.message}`
             );
         }

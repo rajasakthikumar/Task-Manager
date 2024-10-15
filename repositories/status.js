@@ -2,6 +2,7 @@
 const BaseRepositoryWithSoftDelete = require('./baseRepositoryWithSoftDelete');
 const Status = require('../models/status');
 const AuditLog = require('../models/auditLog');
+const CustomError = require('../util/customError')
 
 class StatusRepository extends BaseRepositoryWithSoftDelete {
     constructor() {
@@ -29,7 +30,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async deleteStatus(id, userId) {
         const status = await this.findById(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         await this.softDelete(id);
 
@@ -45,7 +46,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async restoreStatus(id, userId) {
         const status = await this.restore(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         await AuditLog.create({
             action: 'Status Restored',
@@ -59,7 +60,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async hardDeleteStatus(id, userId) {
         const status = await this.findById(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         await this.delete(id);
 
@@ -89,7 +90,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async addNextStatus(id, nextStatusId, userId) {
         const status = await this.findById(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         status.nextStatuses.push(nextStatusId);
         await status.save();
@@ -107,7 +108,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async addPrevStatus(id, prevStatusId, userId) {
         const status = await this.findById(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         status.prevStatuses.push(prevStatusId);
         await status.save();
@@ -125,10 +126,10 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async validateTransition(currentStatusId, nextStatusId, userId) {
         const currentStatus = await this.findById(currentStatusId);
-        if (!currentStatus) throw new Error('Current status not found');
+        if (!currentStatus) throw new CustomError('Current status not found');
 
         if (!currentStatus.nextStatuses.includes(nextStatusId)) {
-            throw new Error('Invalid status transition');
+            throw new CustomError('Invalid status transition');
         }
 
         await AuditLog.create({

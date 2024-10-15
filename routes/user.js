@@ -6,10 +6,8 @@ const limiter = require('../middleware/rateLimit');
 const router = express.Router();
 console.log('User router created');
 
-// Register a new user (public)
 router.post('/register', limiter, userController.registerUser);
 
-// Login user (public)
 router.post('/login', limiter, userController.loginUser);
 
 router.get('/:id', protect, userController.getUserById);

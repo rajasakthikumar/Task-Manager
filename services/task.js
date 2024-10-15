@@ -2,13 +2,14 @@ const BaseService = require('./baseService');
 const { sendEmail } = require('./email');
 const UserRepository = require('../repositories/user');
 const Status = require('../models/status');
+const CustomError = require('../util/customError');
 
 class TaskService extends BaseService {
-    constructor(repository, commentRepository) {
+    constructor(repository, commentRepository,userRepository) {
         console.log('Task Service created');
         super(repository);
         this.commentRepository = commentRepository;
-        this.userRepository = new UserRepository();
+        this.userRepository = userRepository;
     }
 
     async getAllTasks(user) {
@@ -24,7 +25,7 @@ class TaskService extends BaseService {
         if (assignedToId) {
             assignedTo = await this.userRepository.findById(assignedToId);
             if (!assignedTo) {
-                throw new Error('Assigned user not found');
+                throw new CustomError('Assigned user not found');
             }
         }
 

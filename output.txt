@@ -552,8 +552,7 @@ File: index.js
 ----------------------------------------
 const express = require('express');
 const dotenv = require('dotenv');
-const helmet = require('helmet');
-const morgan = require('morgan');
+
 const CustomError = require('./util/customError');
 const taskRoutes = require('./routes/task');
 const statusRoutes = require('./routes/status');
@@ -631,8 +630,15 @@ const protect = asyncHandler(async (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = await User.findById(decoded.id).select('-password');
-
+        req.user = await User.findById(decoded.id)
+        .select('-password')
+        .populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
         if (!req.user) {
             return res.status(401).json({
                 message: 'Not authorized, user not found'
@@ -680,34 +686,6 @@ const errorHandler = (err,req,res,next) => {
 }
 
 module.exports = errorHandler;
-
-File: middleware\permissions.js
-----------------------------------------
-const asyncHandler = require('./asynchandler');
-
-const permissionsCheck = requiredPermissions => {
-    return asyncHandler(async (req, res, next) => {
-        if (!req.user) {
-            return res.status(401).json({ message: 'Not authorized' });
-        }
-        await req.user.populate('roles').execPopulate();
-        const userPermissions = req.user.roles.flatMap(
-            role => role.permissions
-        );
-        const hasPermission = requiredPermissions.every(permission =>
-            userPermissions.includes(permission)
-        );
-        if (!hasPermission) {
-            return res.status(403).json({
-                message: 'Warning: you do not have the necessary permissions'
-            });
-        }
-        next();
-    });
-};
-
-module.exports = { permissionsCheck };
-
 
 File: middleware\rateLimit.js
 ----------------------------------------
@@ -1166,7 +1144,7 @@ class BaseRepository {
             );
             return updatedDoc;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `Error updating ${this.model.modelName}: ${error.message}`
             );
         }
@@ -1177,7 +1155,7 @@ class BaseRepository {
             await this.model.findByIdAndDelete(id);
             return true;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `Error deleting ${this.model.modelName}: ${error.message}`
             );
         }
@@ -1239,6 +1217,7 @@ File: repositories\comment.js
 ----------------------------------------
 const Comment = require('../models/comment');
 const BaseRepository = require('./baseRepository');
+const CustomError = require('../util/customError')
 
 class CommentRepository extends BaseRepository {
     constructor() {
@@ -1248,7 +1227,7 @@ class CommentRepository extends BaseRepository {
     async addAttachments(commentId, attachments) {
         const comment = await this.findById(commentId);
         if (!comment) {
-            throw new Error('Comment not found');
+            throw new CustomError('Comment not found');
         }
 
         comment.attachments.push(...attachments);
@@ -1310,6 +1289,7 @@ File: repositories\status.js
 const BaseRepositoryWithSoftDelete = require('./baseRepositoryWithSoftDelete');
 const Status = require('../models/status');
 const AuditLog = require('../models/auditLog');
+const CustomError = require('../util/customError')
 
 class StatusRepository extends BaseRepositoryWithSoftDelete {
     constructor() {
@@ -1337,7 +1317,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async deleteStatus(id, userId) {
         const status = await this.findById(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         await this.softDelete(id);
 
@@ -1353,7 +1333,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async restoreStatus(id, userId) {
         const status = await this.restore(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         await AuditLog.create({
             action: 'Status Restored',
@@ -1367,7 +1347,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async hardDeleteStatus(id, userId) {
         const status = await this.findById(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         await this.delete(id);
 
@@ -1397,7 +1377,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async addNextStatus(id, nextStatusId, userId) {
         const status = await this.findById(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         status.nextStatuses.push(nextStatusId);
         await status.save();
@@ -1415,7 +1395,7 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async addPrevStatus(id, prevStatusId, userId) {
         const status = await this.findById(id);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         status.prevStatuses.push(prevStatusId);
         await status.save();
@@ -1433,10 +1413,10 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
     async validateTransition(currentStatusId, nextStatusId, userId) {
         const currentStatus = await this.findById(currentStatusId);
-        if (!currentStatus) throw new Error('Current status not found');
+        if (!currentStatus) throw new CustomError('Current status not found');
 
         if (!currentStatus.nextStatuses.includes(nextStatusId)) {
-            throw new Error('Invalid status transition');
+            throw new CustomError('Invalid status transition');
         }
 
         await AuditLog.create({
@@ -1462,6 +1442,7 @@ const Task = require('../models/task');
 const Status = require('../models/status');
 const Comment = require('../models/comment');
 const AuditLog = require('../models/auditLog');
+const CustomError = require('../util/customError');
 const User = require('../models/user');
 
 class TaskRepository extends BaseRepositoryWithSoftDelete {
@@ -1487,10 +1468,10 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
                 .populate('status');
 
             if (!tasks || tasks.length === 0)
-                throw new Error('Tasks not found or unauthorized');
+                throw new CustomError('Tasks not found or unauthorized');
             return tasks;
         } catch (error) {
-            throw new Error(`Error fetching tasks: ${error.message}`);
+            throw new CustomError(`Error fetching tasks: ${error.message}`);
         }
     }
 
@@ -1512,14 +1493,14 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
         console.log(`@!@!@!@! this is task ${task}`);
 
-        if (!task) throw new Error('Task not found or unauthorized');
+        if (!task) throw new CustomError('Task not found or unauthorized');
         return task;
     }
 
     async createTask(task, user, assignedTo = null) {
         const openStatus = await Status.findOne({ _id: task.status });
         if (!openStatus) {
-            throw new Error('Open status not found');
+            throw new CustomError('Open status not found');
         }
 
         const taskToCreate = {
@@ -1554,7 +1535,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             task.user.toString() !== userId.toString() &&
             task.assignedTo.toString() !== userId.toString()
         ) {
-            throw new Error(
+            throw new CustomError(
                 'Only the creator or assigned user can update this task'
             );
         }
@@ -1578,10 +1559,10 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         const task = await this.findById(taskId, userId);
 
         const status = await Status.findById(statusId);
-        if (!status) throw new Error('Status not found');
+        if (!status) throw new CustomError('Status not found');
 
         if (!(await this.validateStatusTransition(task.status, statusId))) {
-            throw new Error('Invalid status transition');
+            throw new CustomError('Invalid status transition');
         }
 
         task.status = status._id;
@@ -1604,7 +1585,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
     async validateStatusTransition(currentStatusId, nextStatusId) {
         const currentStatus = await Status.findById(currentStatusId);
-        if (!currentStatus) throw new Error('Current status not found');
+        if (!currentStatus) throw new CustomError('Current status not found');
 
         const isValidTransition = currentStatus.nextStatuses.includes(
             nextStatusId
@@ -1614,7 +1595,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
     async assignTask(id, userId, assignedToId) {
         const task = await this.model.findOne({ _id: id, user: userId });
-        if (!task) throw new Error('Task not found or unauthorized');
+        if (!task) throw new CustomError('Task not found or unauthorized');
 
         task.assignedTo = assignedToId;
 
@@ -1665,7 +1646,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             $or: [{ user: userId }, { assignedTo: userId }]
         });
 
-        if (!task) throw new Error('Task not found or unauthorized');
+        if (!task) throw new CustomError('Task not found or unauthorized');
 
         task.isDeleted = false;
         task.deletedDate = null;
@@ -1684,14 +1665,14 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         const task = await this.model.findById(taskId);
 
         if (!task) {
-            throw new Error('Task not found');
+            throw new CustomError('Task not found');
         }
 
         if (
             task.user.toString() !== userId.toString() &&
             task.assignedTo.toString() !== userId.toString()
         ) {
-            throw new Error(
+            throw new CustomError(
                 'Only the creator or assigned user can comment on this task'
             );
         }
@@ -1719,7 +1700,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
     async getTasksByPriority(userId, priority) {
         const validPriorities = ['low', 'medium', 'high'];
         if (!validPriorities.includes(priority)) {
-            throw new Error('Invalid priority value');
+            throw new CustomError('Invalid priority value');
         }
 
         return await this.model
@@ -1735,7 +1716,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
         const validPriorities = ['low', 'medium', 'high'];
         if (!validPriorities.includes(priority)) {
-            throw new Error('Invalid priority value');
+            throw new CustomError('Invalid priority value');
         }
 
         task.priority = priority;
@@ -1814,7 +1795,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             statusName: 'completed'
         });
 
-        if (!completedStatus) throw new Error('Completed status not found');
+        if (!completedStatus) throw new CustomError('Completed status not found');
 
         return await this.model
             .find({
@@ -1842,7 +1823,7 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
     async unassignTask(id, userId) {
         const task = await this.model.findOne({ _id: id, user: userId });
-        if (!task) throw new Error('Task not found or unauthorized');
+        if (!task) throw new CustomError('Task not found or unauthorized');
 
         task.assignedTo = null;
 
@@ -1882,13 +1863,11 @@ File: repositories\user.js
 const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
 const AuditLog = require('../models/auditLog');
-const payment = require('../models/payment');
 const CustomError = require('../util/customError');
 
 class UserRepository extends BaseRepository {
     constructor() {
         console.log('User Repository created');
-        // this.Payment = Payment;
         super(User);
     }
 
@@ -1896,7 +1875,7 @@ class UserRepository extends BaseRepository {
         try {
             return await this.model.findOne({ username });
         } catch (error) {
-            throw new Error(`Error finding user by username: ${error.message}`);
+            throw new CustomError(`Error finding user by username: ${error.message}`);
         }
     }
 
@@ -2022,7 +2001,7 @@ const router = express.Router();
 
 console.log('Task router created');
 
-router.get('/', protect, authorize(['VIEW_TASKS']), taskController.getAllTasks);
+router.get('/', protect, authorize('VIEW_TASKS'), taskController.getAllTasks);
 router.get('/assigned', protect, taskController.getTasksAssignedTo);
 router.get('/created', protect, taskController.getTasksCreatedBy);
 router.get('/deleted', protect, taskController.getDeletedTasks);
@@ -2033,18 +2012,18 @@ router.get('/status/:statusId', protect, taskController.getTasksByStatus);
 router.get('/search/:searchTerm', protect, taskController.searchTasks);
 router.get('/:id', protect, taskController.getTaskById);
 
-router.post('/', protect, authorize(['CREATE_TASK']), taskController.createTask);
+router.post('/', protect, authorize('CREATE_TASK'), taskController.createTask);
 router.post('/:id/assign', protect, taskController.assignTask);
 router.post('/:id/unassign', protect, taskController.unassignTask);
 router.post('/:id/restore', protect, taskController.restoreTask);
 router.post('/date-range', protect, taskController.getTasksByDateRange);
 
-router.put('/:id', protect, authorize(['UPDATE_TASK']), taskController.updateTask);
+router.put('/:id', protect, authorize('UPDATE_TASK'), taskController.updateTask);
 router.put('/:id/end-date', protect, taskController.updateTaskEndDate);
 router.put('/:id/priority', protect, taskController.updateTaskPriority);
 router.put('/:taskId/status/:statusId', protect, taskController.updateTaskStatus);
 
-router.delete('/:id', protect, authorize(['DELETE_TASK']), taskController.deleteTask);
+router.delete('/:id', protect, authorize('DELETE_TASK'), taskController.deleteTask);
 router.delete('/:id/soft-delete', protect, taskController.softDeleteTask);
 
 module.exports = router;
@@ -2563,7 +2542,7 @@ const CustomError = require('../util/customError');
 class UserService extends BaseService {
     constructor(userRepository, roleRepository) {
         super(userRepository);
-        this.roleRepository = roleRepository; // Injecting roleRepository here
+        this.roleRepository = roleRepository; 
     }
 
     async registerUser(userData) {
@@ -2580,7 +2559,13 @@ class UserService extends BaseService {
             userData.roles = role._id; 
         }
 
-        const newUser = await this.repository.createUser(userData);
+        await newUser.populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
 
         const token = await generateToken(newUser._id);
 
@@ -2599,9 +2584,15 @@ class UserService extends BaseService {
             throw new CustomError('Invalid username or password');
         }
     
-        const foundUser = await this.repository.model
-            .findById(user._id)
-            .populate('roles'); 
+         const foundUser = await this.repository.model
+        .findById(user._id)
+        .populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
     
         const token = await generateToken(foundUser._id);
     
@@ -2654,7 +2645,16 @@ class UserService extends BaseService {
                 console.log('@!@!@!@! Role already assigned to the user');
             }
     
-            const savedUser =  await this.repository.findById(userId);
+            const savedUser =  await this.repository.model
+            .findById(userId)
+            .populate({
+                path: 'roles',
+                populate: {
+                    path: 'permissions',
+                    model: 'Permission'
+                }
+            });
+
             return await savedUser.populate('roles');
         } catch (error) {
             console.error('Error in assignRole function:', error);
