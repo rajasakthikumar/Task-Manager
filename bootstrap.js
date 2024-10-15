@@ -23,9 +23,15 @@ const userRepository = new UserRepository();
 const roleRepository = new RoleRepository();
 const auditLogRepository = new AuditLogRepository();
 
-const taskService = new TaskService(taskRepository, commentRepository, userRepository);
+const taskService = new TaskService(
+    taskRepository, 
+    commentRepository, 
+    userRepository, 
+    statusRepository, 
+    auditLogRepository
+);
 const statusService = new StatusService(statusRepository, auditLogRepository);
-const userService = new UserService(userRepository,roleRepository);
+const userService = new UserService(userRepository, roleRepository);
 const roleService = new RoleService(roleRepository);
 const auditLogService = new AuditLogService(auditLogRepository);
 const commentService = new CommentService(commentRepository);

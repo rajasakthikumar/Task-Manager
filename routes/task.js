@@ -12,7 +12,7 @@ router.get('/deleted', protect, taskController.getDeletedTasks);
 router.get('/overdue', protect, taskController.getOverdueTasks);
 router.get('/due-today', protect, taskController.getTasksDueToday);
 router.get('/priority/:priority', protect, taskController.getTasksByPriority);
-router.get('/status/:statusId', protect, taskController.getTasksByStatus);
+// router.get('/status/:statusId', protect, taskController.getTasksByStatus);
 router.get('/search/:searchTerm', protect, taskController.searchTasks);
 router.get('/:id', protect, taskController.getTaskById);
 
@@ -20,7 +20,7 @@ router.post('/', protect, authorize('CREATE_TASK'), taskController.createTask);
 router.post('/:id/assign', protect, taskController.assignTask);
 router.post('/:id/unassign', protect, taskController.unassignTask);
 router.post('/:id/restore', protect, taskController.restoreTask);
-router.post('/date-range', protect, taskController.getTasksByDateRange);
+// router.post('/date-range', protect, taskController.getTasksByDateRange);
 
 router.put('/:id', protect, authorize('UPDATE_TASK'), taskController.updateTask);
 router.put('/:id/end-date', protect, taskController.updateTaskEndDate);
