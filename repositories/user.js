@@ -2,6 +2,7 @@ const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
 const AuditLog = require('../models/auditLog');
 const payment = require('../models/payment');
+const CustomError = require('../util/customError');
 
 class UserRepository extends BaseRepository {
     constructor() {
@@ -27,18 +28,21 @@ class UserRepository extends BaseRepository {
     }
 
     async createUser(userData) {
-        const newUser = await this.create(userData);
-
-        // Create audit log
-        await AuditLog.create({
-            action: 'User Registered',
-            performedBy: newUser._id,
-            entity: 'User',
-            entityId: newUser._id,
-            changes: { username: newUser.username, roles: newUser.roles }
-        });
-
-        return newUser;
+        try {        
+            console.log("@!@!@!@!@!@! userData",userData);
+            const newUser = await this.create(userData);
+            await AuditLog.create({
+                action: 'User Registered',
+                performedBy: newUser._id,
+                entity: 'User',
+                entityId: newUser._id,
+                changes: { username: newUser.username, roles: newUser.roles }
+            });
+            return newUser;
+        }
+        catch (e) {
+            throw new CustomError("Failed to create the user");
+        }
     }
 
     async getAllAdmins() {

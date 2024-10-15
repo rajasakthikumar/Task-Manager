@@ -1,3 +1,4 @@
+// config/db.js
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 
@@ -5,9 +6,7 @@ dotenv.config();
 const uri = process.env.DBURI;
 
 if (!uri) {
-  throw new Error(
-    'MongoDB URI is missing. Make sure DBURI is defined.'
-  );
+  throw new Error(' Make sure DBURI is not defined.');
 }
 
 mongoose

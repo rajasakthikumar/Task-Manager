@@ -1,4 +1,5 @@
 const asyncHandler = require('../middleware/asynchandler');
+const CustomError = require('../util/customError');
 
 class UserController {
     constructor(userService) {
@@ -8,11 +9,15 @@ class UserController {
 
     registerUser = asyncHandler(async (req, res) => {
         const { username, email, password } = req.body;
+        console.log(`@!@!@!@!@! USerController ${username}`);
+
         const user = await this.userService.registerUser({
             username,
             email,
             password
         });
+
+        console.log(`@!@!@!@! registerUSer Called`)
         res.status(201).json(user);
     });
 

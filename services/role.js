@@ -20,6 +20,10 @@ class RoleService extends BaseService {
         return await this.repository.findAll();
     }
 
+    async getRoleByName(roleName) {
+        return await this.repository.findByName(roleName);
+    }
+
     async getRoleById(id) {
         return await this.repository.findById(id);
     }

@@ -25,7 +25,7 @@ const auditLogRepository = new AuditLogRepository();
 
 const taskService = new TaskService(taskRepository, commentRepository);
 const statusService = new StatusService(statusRepository, auditLogRepository);
-const userService = new UserService(userRepository);
+const userService = new UserService(userRepository,roleRepository);
 const roleService = new RoleService(roleRepository);
 const auditLogService = new AuditLogService(auditLogRepository);
 const commentService = new CommentService(commentRepository);
@@ -34,7 +34,7 @@ const taskController = new TaskController(taskService);
 const statusController = new StatusController(statusService);
 const userController = new UserController(userService);
 const roleController = new RoleController(roleService);
-const commentController = new CommentController();
+const commentController = new CommentController(commentService);
 
 module.exports = {
     taskController,
