@@ -27,6 +27,11 @@ const userSchema = new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
+    },
+    isPayed:{
+        type:Boolean,
+        required:true,
+        default:false
     }
 });
 

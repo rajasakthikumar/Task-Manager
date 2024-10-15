@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
+var num = 0;
+
 // Directory to start scanning
 const startDir = './'; // Change this to your starting directory if needed
 const outputFilePath = 'output.txt';
@@ -32,7 +34,9 @@ function writeJsFilesToTxt(jsFiles, outputFile) {
     writeStream.write(`File: ${filePath}\n`);
     writeStream.write('----------------------------------------\n');
     writeStream.write(`${content}\n\n`);
+    num  = num +1;
   });
+
 
   writeStream.end();
 }
@@ -42,6 +46,7 @@ try {
   const jsFiles = getAllJsFiles(startDir);
   writeJsFilesToTxt(jsFiles, outputFilePath);
   console.log(`All JavaScript files have been written to ${outputFilePath}`);
+  console.log(num);
 } catch (err) {
   console.error('Error:', err);
 }

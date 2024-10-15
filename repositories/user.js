@@ -1,10 +1,12 @@
 const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
 const AuditLog = require('../models/auditLog');
+const payment = require('../models/payment');
 
 class UserRepository extends BaseRepository {
     constructor() {
         console.log('User Repository created');
+        // this.Payment = Payment;
         super(User);
     }
 
@@ -42,6 +44,7 @@ class UserRepository extends BaseRepository {
     async getAllAdmins() {
         return await this.model.find({ roles: 'admin' }).select('username roles');
     }
+
 }
 
 module.exports = UserRepository;

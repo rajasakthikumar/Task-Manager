@@ -1,4 +1,5 @@
 const BaseService = require('./baseService');
+const CustomError = require('../util/customError');
 
 class RoleService extends BaseService {
     constructor(repository) {
@@ -7,8 +8,10 @@ class RoleService extends BaseService {
 
     async createRole(roleData) {
         const existingRole = await this.repository.findByName(roleData.name);
+        console.log('Creating role with data:', roleData);
+        
         if (existingRole) {
-            throw new Error('Role already exists');
+            throw new CustomError('Role already exists');
         }
         return await this.repository.create(roleData);
     }

@@ -13,29 +13,37 @@ const UserController = require('./controllers/user');
 const RoleRepository = require('./repositories/role');
 const RoleService = require('./services/role');
 const RoleController = require('./controllers/role');
+const AuditLogRepository = require('./repositories/auditLog');
+const AuditLogService = require('./services/auditLog');
+const CommentController = require('./controllers/comment');
+const CommentService = require('./services/comment');
 
 const taskRepository = new TaskRepository();
 const commentRepository = new CommentRepository();
-const taskService = new TaskService(taskRepository, commentRepository);
-const taskController = new TaskController(taskService);
-
 const statusRepository = new StatusRepository();
-const statusService = new StatusService(statusRepository);
-const statusController = new StatusController(statusService);
-
 const userRepository = new UserRepository();
-const userService = new UserService(userRepository);
-const userController = new UserController(userService);
-
 const roleRepository = new RoleRepository();
+const auditLogRepository = new AuditLogRepository();
+
+const taskService = new TaskService(taskRepository, commentRepository);
+const statusService = new StatusService(statusRepository, auditLogRepository);
+const userService = new UserService(userRepository);
 const roleService = new RoleService(roleRepository);
+const auditLogService = new AuditLogService(auditLogRepository);
+const commentService = new CommentService(commentRepository);
+
+const taskController = new TaskController(taskService);
+const statusController = new StatusController(statusService);
+const userController = new UserController(userService);
 const roleController = new RoleController(roleService);
+const commentController = new CommentController();
 
 module.exports = {
     taskController,
     statusController,
     userController,
-    roleController
+    roleController,
+    commentController
 };
 
 
@@ -48,36 +56,131 @@ dotenv.config();
 const uri = process.env.DBURI;
 
 if (!uri) {
-  throw new Error('MongoDB URI is missing. Make sure MONGODB_URI is defined.');
+  throw new Error(
+    'MongoDB URI is missing. Make sure DBURI is defined.'
+  );
 }
 
-mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose
+  .connect(uri, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+  })
   .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('Error connecting to MongoDB:', err));
+  .catch(err =>
+    console.error('Error connecting to MongoDB:', err)
+  );
+
+
+File: controllers\comment.js
+----------------------------------------
+const asyncHandler = require('../middleware/asynchandler');
+const CommentService = require('../services/comment');
+const CommentRepository = require('../repositories/comment');
+const path = require('path');
+const fs = require('fs');
+
+class CommentController {
+    constructor() {
+        const commentRepository = new CommentRepository();
+        this.commentService = new CommentService(commentRepository);
+    }
+
+    addComment = asyncHandler(async (req, res) => {
+        const { taskId } = req.params;
+        const { text } = req.body;
+
+        const attachments = req.files
+            ? req.files.map(file => ({
+                  filename: file.filename,
+                  filepath: file.path
+              }))
+            : [];
+
+        const newComment = await this.commentService.create({
+            text,
+            createdBy: req.user._id,
+            task: taskId,
+            attachments
+        });
+
+        res.status(201).json(newComment);
+    });
+
+    addAttachmentsToComment = asyncHandler(async (req, res) => {
+        const { commentId } = req.params;
+
+        const attachments = req.files.map(file => ({
+            filename: file.filename,
+            filepath: file.path
+        }));
+
+        const updatedComment = await this.commentService.addAttachmentToComment(
+            commentId,
+            attachments
+        );
+
+        res.status(200).json(updatedComment);
+    });
+
+    downloadAttachment = asyncHandler(async (req, res) => {
+        const { commentId, attachmentId } = req.params;
+        const comment = await this.commentService.findById(commentId);
+
+        if (!comment) {
+            return res.status(404).json({ message: 'Comment not found' });
+        }
+
+        const attachment = comment.attachments.id(attachmentId);
+        if (!attachment) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        const filePath = path.resolve(attachment.filepath);
+        res.download(filePath, attachment.filename);
+    });
+
+    deleteAttachment = asyncHandler(async (req, res) => {
+        const { commentId, attachmentId } = req.params;
+        const updatedComment = await this.commentService.deleteAttachment(
+            commentId,
+            attachmentId
+        );
+
+        res.status(200).json(updatedComment);
+    });
+}
+
+module.exports = CommentController;
 
 
 File: controllers\role.js
 ----------------------------------------
-// controllers/roleController.js
 const asyncHandler = require('../middleware/asynchandler');
+const CustomError = require('../util/customError');
 
 class RoleController {
     constructor(roleService) {
         this.roleService = roleService;
     }
 
-    createRole = asyncHandler(async (req, res) => {
-        const role = await this.roleService.createRole(req.body);
-        res.status(201).json(role);
+    createRole = asyncHandler(async (req, res,next) => {
+        const {role} = req.body;
+        if(role == "president") {
+            next(new CustomError("Cannot create this role",400));
+        }
+        console.log(req.body);
+        let roles = await this.roleService.createRole(req.body);
+        res.status(201).json(roles);
     });
 
     getAllRoles = asyncHandler(async (req, res) => {
-        const roles = await this.roleService.findAll();
+        const roles = await this.roleService.getAllRoles();
         res.status(200).json(roles);
     });
 
     getRoleById = asyncHandler(async (req, res) => {
-        const role = await this.roleService.findById(req.params.id);
+        const role = await this.roleService.getRoleById(req.params.id);
         res.status(200).json(role);
     });
 }
@@ -87,7 +190,6 @@ module.exports = RoleController;
 
 File: controllers\status.js
 ----------------------------------------
-// controllers/statusController.js
 const asyncHandler = require('../middleware/asynchandler');
 
 class StatusController {
@@ -112,52 +214,81 @@ class StatusController {
     });
 
     createStatus = asyncHandler(async (req, res) => {
-        const status = await this.service.createStatus(req.body, req.user);
+        const status = await this.service.createStatus(
+            req.body,
+            req.user
+        );
         res.status(201).json(status);
     });
 
     deleteStatus = asyncHandler(async (req, res) => {
         const id = req.params.id;
         await this.service.deleteStatus(id, req.user);
-        res.status(200).json({ message: 'Status soft deleted successfully' });
+        res.status(200).json({
+            message: 'Status soft deleted successfully'
+        });
     });
 
     restoreStatus = asyncHandler(async (req, res) => {
         const id = req.params.id;
-        const restoredStatus = await this.service.restoreStatus(id, req.user);
-        res.status(200).json({ message: 'Status restored successfully', restoredStatus });
+        const restoredStatus = await this.service.restoreStatus(
+            id,
+            req.user
+        );
+        res.status(200).json({
+            message: 'Status restored successfully',
+            restoredStatus
+        });
     });
 
     hardDeleteStatus = asyncHandler(async (req, res) => {
         const id = req.params.id;
         await this.service.hardDeleteStatus(id, req.user);
-        res.status(200).json({ message: 'Status permanently deleted successfully' });
+        res.status(200).json({
+            message: 'Status permanently deleted successfully'
+        });
     });
 
     modifyStatus = asyncHandler(async (req, res) => {
         const id = req.params.id;
         const bodyToModify = req.body;
-        const modifiedStatus = await this.service.modifyStatus(id, bodyToModify, req.user);
+        const modifiedStatus = await this.service.modifyStatus(
+            id,
+            bodyToModify,
+            req.user
+        );
         res.status(200).json(modifiedStatus);
     });
 
     addNextStatus = asyncHandler(async (req, res) => {
         const { id } = req.params;
         const { nextStatusId } = req.body;
-        const status = await this.service.addNextStatus(id, nextStatusId, req.user);
+        const status = await this.service.addNextStatus(
+            id,
+            nextStatusId,
+            req.user
+        );
         res.status(200).json(status);
     });
 
     addPrevStatus = asyncHandler(async (req, res) => {
         const { id } = req.params;
         const { prevStatusId } = req.body;
-        const status = await this.service.addPrevStatus(id, prevStatusId, req.user);
+        const status = await this.service.addPrevStatus(
+            id,
+            prevStatusId,
+            req.user
+        );
         res.status(200).json(status);
     });
 
     validateTransition = asyncHandler(async (req, res) => {
         const { currentStatusId, nextStatusId } = req.params;
-        await this.service.validateTransition(currentStatusId, nextStatusId, req.user);
+        await this.service.validateTransition(
+            currentStatusId,
+            nextStatusId,
+            req.user
+        );
         res.status(200).json({ message: 'Status transition is valid' });
     });
 }
@@ -167,185 +298,196 @@ module.exports = StatusController;
 
 File: controllers\task.js
 ----------------------------------------
+// controllers/task.js
 const asyncHandler = require('../middleware/asynchandler');
 
 class TaskController {
     constructor(service) {
         this.service = service;
-        console.log("Task Controller created");
+        console.log('Task Controller created');
     }
 
-    getAllTasks = asyncHandler(async (req, res, next) => {
+    getAllTasks = asyncHandler(async (req, res) => {
         const tasks = await this.service.getAllTasks(req.user);
         res.status(200).json(tasks);
     });
 
-    getTaskById = asyncHandler(async (req, res, next) => {
+    getTaskById = asyncHandler(async (req, res) => {
         const task = await this.service.findById(req.params.id, req.user);
         res.status(200).json(task);
     });
 
-    createTask = asyncHandler(async (req, res, next) => {
+    createTask = asyncHandler(async (req, res) => {
         const taskData = { ...req.body };
-        const assignedTo = req.body.assignedTo || null;
-        const createdTask = await this.service.createTask(taskData, req.user, assignedTo);
+        const assignedToId = req.body.assignedTo || null;
+        const createdTask = await this.service.createTask(
+            taskData,
+            req.user,
+            assignedToId
+        );
         res.status(201).json(createdTask);
     });
 
-    updateTask = asyncHandler(async (req, res, next) => {
-        const updatedTask = await this.service.updateTask(req.params.id, req.body, req.user);
+    updateTask = asyncHandler(async (req, res) => {
+        const updatedTask = await this.service.updateTask(
+            req.params.id,
+            req.body,
+            req.user
+        );
         res.status(200).json(updatedTask);
     });
 
-    updateTaskStatus = asyncHandler(async (req, res, next) => {
+    updateTaskStatus = asyncHandler(async (req, res) => {
         const { taskId, statusId } = req.params;
-        const updatedTask = await this.service.updateTaskStatus(taskId, statusId, req.user);
+        const updatedTask = await this.service.updateTaskStatus(
+            taskId,
+            statusId,
+            req.user
+        );
         res.status(200).json(updatedTask);
     });
 
-    deleteTask = asyncHandler(async (req, res, next) => {
-        const deletedTask = await this.service.deleteTask(req.params.id, req.user);
-        res.status(200).json({ message: 'Task deleted successfully', deletedTask });
-    });
-
-    deleteTasks = asyncHandler(async (req, res, next) => {
-        await this.service.deleteAllTasks(req.user);
+    deleteTask = asyncHandler(async (req, res) => {
+        const deletedTask = await this.service.deleteTask(
+            req.params.id,
+            req.user
+        );
         res.status(200).json({
-            message: 'All tasks are cleared',
+            message: 'Task deleted successfully',
+            deletedTask
         });
     });
 
     assignTask = asyncHandler(async (req, res) => {
         const { id } = req.params;
         const { assignedToId } = req.body;
-
-        const updatedTask = await this.service.assignTask(id, req.user._id, assignedToId);
+        const updatedTask = await this.service.assignTask(
+            id,
+            req.user._id,
+            assignedToId
+        );
         res.status(200).json(updatedTask);
     });
 
-    addComment = asyncHandler(async (req, res, next) => {
+    addComment = asyncHandler(async (req, res) => {
         const { taskId } = req.params;
         const { text } = req.body;
-
-        const newComment = await this.service.addComment(taskId, req.user, text);
-
+        const newComment = await this.service.addComment(
+            taskId,
+            req.user,
+            text
+        );
         res.status(201).json(newComment);
     });
 
-    getTasksByPriority = asyncHandler(async (req, res, next) => {
+    getTasksByPriority = asyncHandler(async (req, res) => {
         const { priority } = req.params;
-        const tasks = await this.service.getTasksByPriority(req.user, priority);
+        const tasks = await this.service.getTasksByPriority(
+            req.user,
+            priority
+        );
         res.status(200).json(tasks);
     });
 
-    updateTaskPriority = asyncHandler(async (req, res, next) => {
+    updateTaskPriority = asyncHandler(async (req, res) => {
         const { id } = req.params;
         const { priority } = req.body;
-        const updatedTask = await this.service.updateTaskPriority(id, req.user, priority);
+        const updatedTask = await this.service.updateTaskPriority(
+            id,
+            req.user,
+            priority
+        );
         res.status(200).json(updatedTask);
     });
 
-    getTasksAssignedTo = asyncHandler(async (req, res, next) => {
+    getTasksAssignedTo = asyncHandler(async (req, res) => {
         const tasks = await this.service.getTasksAssignedTo(req.user);
         res.status(200).json(tasks);
     });
 
-    getTasksCreatedBy = asyncHandler(async (req, res, next) => {
+    getTasksCreatedBy = asyncHandler(async (req, res) => {
         const tasks = await this.service.getTasksCreatedBy(req.user);
         res.status(200).json(tasks);
     });
 
-    softDeleteTask = asyncHandler(async (req, res, next) => {
-        const { id } = req.params;
-        const softDeletedTask = await this.service.softDeleteTask(id, req.user);
-        res.status(200).json({ message: 'Task soft deleted successfully', softDeletedTask });
+    softDeleteTask = asyncHandler(async (req, res) => {
+        const deletedTask = await this.service.softDeleteTask(
+            req.params.id,
+            req.user
+        );
+        res.status(200).json({
+            message: 'Task soft deleted successfully',
+            deletedTask
+        });
     });
 
-    restoreTask = asyncHandler(async (req, res, next) => {
-        const { id } = req.params;
-        const restoredTask = await this.service.restoreTask(id, req.user);
-        res.status(200).json({ message: 'Task restored successfully', restoredTask });
+    restoreTask = asyncHandler(async (req, res) => {
+        const restoredTask = await this.service.restoreTask(
+            req.params.id,
+            req.user
+        );
+        res.status(200).json({
+            message: 'Task restored successfully',
+            restoredTask
+        });
     });
 
-    getDeletedTasks = asyncHandler(async (req, res, next) => {
+    getDeletedTasks = asyncHandler(async (req, res) => {
         const tasks = await this.service.getDeletedTasks(req.user);
         res.status(200).json(tasks);
     });
 
-    getTasksByDateRange = asyncHandler(async (req, res, next) => {
-        const { startDate, endDate } = req.query;
-        const tasks = await this.service.getTasksByDateRange(req.user, new Date(startDate), new Date(endDate));
+    getTasksByStatus = asyncHandler(async (req, res) => {
+        const { statusId } = req.params;
+        const tasks = await this.service.getTasksByStatus(
+            req.user,
+            statusId
+        );
         res.status(200).json(tasks);
     });
 
-    searchTasks = asyncHandler(async (req, res, next) => {
-        const { searchTerm } = req.query;
+    getTasksByDateRange = asyncHandler(async (req, res) => {
+        const { startDate, endDate } = req.body;
+        const tasks = await this.service.getTasksByDateRange(
+            req.user,
+            startDate,
+            endDate
+        );
+        res.status(200).json(tasks);
+    });
+
+    searchTasks = asyncHandler(async (req, res) => {
+        const { searchTerm } = req.params;
         const tasks = await this.service.searchTasks(req.user, searchTerm);
         res.status(200).json(tasks);
     });
 
-    getOverdueTasks = asyncHandler(async (req, res, next) => {
+    getOverdueTasks = asyncHandler(async (req, res) => {
         const tasks = await this.service.getOverdueTasks(req.user);
         res.status(200).json(tasks);
     });
 
-    getTasksDueToday = asyncHandler(async (req, res, next) => {
+    getTasksDueToday = asyncHandler(async (req, res) => {
         const tasks = await this.service.getTasksDueToday(req.user);
         res.status(200).json(tasks);
     });
 
-    unassignTask = asyncHandler(async (req, res, next) => {
+    unassignTask = asyncHandler(async (req, res) => {
         const { id } = req.params;
         const updatedTask = await this.service.unassignTask(id, req.user);
         res.status(200).json(updatedTask);
     });
 
-    updateTaskEndDate = asyncHandler(async (req, res, next) => {
+    updateTaskEndDate = asyncHandler(async (req, res) => {
         const { id } = req.params;
         const { endDate } = req.body;
-        const updatedTask = await this.service.updateTaskEndDate(id, req.user, new Date(endDate));
+        const updatedTask = await this.service.updateTaskEndDate(
+            id,
+            req.user,
+            endDate
+        );
         res.status(200).json(updatedTask);
     });
-
-    addComment = asyncHandler(async (req, res) => {
-        const { taskId } = req.params;
-        const { text } = req.body;
-        const newComment = await this.service.addComment(taskId, req.user._id, text);
-        res.status(201).json(newComment);
-    });
-
-    softDeleteTask = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const deletedTask = await this.service.softDeleteTask(id);
-        res.status(200).json({ message: 'Task soft deleted successfully', deletedTask });
-    });
-
-    restoreTask = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const restoredTask = await this.service.restoreTask(id);
-        res.status(200).json({ message: 'Task restored successfully', restoredTask });
-    });
-
-    getTasksWithFilter = asyncHandler(async (req, res) => {
-        const { page, limit, status, priority } = req.query;
-        const filter = {};
-
-        if (status) filter.status = status;
-        if (priority) filter.priority = priority;
-
-        const tasks = await this.service.getTasksWithFilter(filter, parseInt(page), parseInt(limit));
-        res.status(200).json(tasks);
-    });
-
-    addComment = asyncHandler(async (req, res) => {
-        const { taskId } = req.params;
-        const { text } = req.body;
-        const newComment = await this.service.addComment(taskId, req.user._id, text);
-        res.status(201).json(newComment);
-    });
-
-    
-
 }
 
 module.exports = TaskController;
@@ -356,40 +498,33 @@ File: controllers\user.js
 const asyncHandler = require('../middleware/asynchandler');
 
 class UserController {
-    
     constructor(userService) {
         this.userService = userService;
         console.log('User Controller created');
     }
 
     registerUser = asyncHandler(async (req, res) => {
-        const { username, password } = req.body;
-        const user = await this.userService.registerUser({ username, password });
+        const { username, email, password } = req.body;
+        const user = await this.userService.registerUser({
+            username,
+            email,
+            password
+        });
         res.status(201).json(user);
     });
 
     loginUser = asyncHandler(async (req, res) => {
         const { username, password } = req.body;
-        const user = await this.userService.loginUser(username, password);
+        const user = await this.userService.loginUser(
+            username,
+            password
+        );
         res.status(200).json(user);
     });
 
     getUserById = asyncHandler(async (req, res) => {
         const userId = req.params.id;
         const user = await this.userService.getUserById(userId);
-        res.status(200).json(user);
-    });
-
-    getUserByUsername = asyncHandler(async (req, res) => {
-        const username = req.params.username;
-        const user = await this.userService.getUserByUsername(username);
-        res.status(200).json(user);
-    });
-
-    getUser = asyncHandler(async (req, res) => {
-        const username = req.params.username;
-        const role = req.params.role.toLowerCase();
-        const user = await this.userService.getUserByRole(username, role);
         res.status(200).json(user);
     });
 
@@ -400,35 +535,12 @@ class UserController {
 
     assignRole = asyncHandler(async (req, res) => {
         const { userId, roleId } = req.body;
-        const user = await User.findById(userId);
-        const role = await Role.findById(roleId);
-
-        if (!user || !role) {
-            return res.status(404).json({ message: 'User or Role not found' });
-        }
-
-        if (!user.roles.includes(roleId)) {
-            user.roles.push(roleId);
-            await user.save();
-        }
-
-        res.status(200).json(user);
-    });
-
-    getUserDetails = asyncHandler(async (req, res) => {
-        const user = await User.findById(req.params.id).populate('roles');
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-        res.status(200).json(user);
-    });
-
-    assignRole = asyncHandler(async (req, res) => {
-        const { userId, roleId } = req.body;
-        const updatedUser = await this.userService.assignRole(userId, roleId);
+        const updatedUser = await this.userService.assignRole(
+            userId,
+            roleId
+        );
         res.status(200).json(updatedUser);
     });
-
 }
 
 module.exports = UserController;
@@ -438,38 +550,47 @@ File: index.js
 ----------------------------------------
 const express = require('express');
 const dotenv = require('dotenv');
-const mongoose = require('mongoose');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const errorHandler = require('./middleware/errorHandler');
+const CustomError = require('./util/customError');
 const taskRoutes = require('./routes/task');
 const statusRoutes = require('./routes/status');
 const userRoutes = require('./routes/user');
 const roleRoutes = require('./routes/role');
+// const commentRoutes = require('./routes/comment');
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(helmet());
-app.use(morgan('dev'));
 
+
+// Mount routes
 app.use('/api/tasks', taskRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/roles', roleRoutes); 
+app.use('/api/roles', roleRoutes);
+// app.use('/api', commentRoutes);
 
-app.use(errorHandler);
+app.use((err, req, res, next) => {
+    if (err instanceof CustomError) {
+        CustomError.handleError(err, res);
+    } else {
+        // If it's not a CustomError, you can send a generic response
+        res.status(500).json({
+            success: false,
+            message: 'Internal Server Error'
+        });
+    }
+});
 
 const PORT = process.env.PORT || 3000;
-mongoose.connect(process.env.DBURI ) .then(() => {
-    app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
-})
-.catch(err => {
-    console.error('MongoDB connection error:', err.message);
+require('./config/db'); 
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
+
 
 File: middleware\asynchandler.js
 ----------------------------------------
@@ -484,11 +605,13 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 const asyncHandler = require('./asynchandler');
 
-// Protect routes - ensure user is authenticated
 const protect = asyncHandler(async (req, res, next) => {
     let token;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    if (
+        req.headers.authorization &&
+        req.headers.authorization.startsWith('Bearer')
+    ) {
         token = req.headers.authorization.split(' ')[1];
     }
     if (!token) {
@@ -517,12 +640,22 @@ const protect = asyncHandler(async (req, res, next) => {
 });
 
 const authorize = (...allowedRoles) => {
-    return (req, res, next) => {
-        if (!req.user || !req.user.roles.some(role => allowedRoles.includes(role))) {
-            throw new Error('Forbidden: You do not have access to this resource');
+    return asyncHandler(async (req, res, next) => {
+        if (!req.user) {
+            throw new Error('Not authorized');
+        }
+        await req.user.populate('roles').execPopulate();
+        const userRoles = req.user.roles.map(role => role.name);
+        const hasRole = userRoles.some(role =>
+            allowedRoles.includes(role)
+        );
+        if (!hasRole) {
+            return res.status(403).json({
+                message: 'Forbidden: You do not have access to this resource'
+            });
         }
         next();
-    };
+    });
 };
 
 module.exports = { protect, authorize };
@@ -540,28 +673,27 @@ const errorHandler = (err, req, res, next) => {
 module.exports = errorHandler;
 
 
-
 File: middleware\permissions.js
 ----------------------------------------
 const asyncHandler = require('./asynchandler');
-const User = require('../models/user');
 
-const permissionsCheck = (requiredPermissions) => {
+const permissionsCheck = requiredPermissions => {
     return asyncHandler(async (req, res, next) => {
-        const userId = req.user._id;
-        const user = await User.findById(userId).populate('roles');
-
-        if (!user) {
-            return res.status(401).json({ message: 'Not authorized, user not found' });
+        if (!req.user) {
+            return res.status(401).json({ message: 'Not authorized' });
         }
-
-        const userPermissions = user.roles.flatMap(role => role.permissions);
-        const hasPermission = requiredPermissions.every(permission => userPermissions.includes(permission));
-        
+        await req.user.populate('roles').execPopulate();
+        const userPermissions = req.user.roles.flatMap(
+            role => role.permissions
+        );
+        const hasPermission = requiredPermissions.every(permission =>
+            userPermissions.includes(permission)
+        );
         if (!hasPermission) {
-            return res.status(403).json({ message: 'Forbidden: You do not have the necessary permissions' });
+            return res.status(403).json({
+                message: 'Warning: you do not have the necessary permissions'
+            });
         }
-
         next();
     });
 };
@@ -574,12 +706,14 @@ File: middleware\rateLimit.js
 const rateLimit = require('express-rate-limit');
 
 const limiter = rateLimit({
-    windowMs: 15*60*1000,
-    max:100,
-    message:" Too many requests from this IP, please try again later"
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message:
+        'Too many requests from this '
 });
 
 module.exports = limiter;
+
 
 File: middleware\upload.js
 ----------------------------------------
@@ -587,24 +721,23 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure upload directory exists
 const uploadDirectory = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDirectory)) {
     fs.mkdirSync(uploadDirectory, { recursive: true });
 }
 
-// Multer storage configuration
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, uploadDirectory);
     },
     filename: (req, file, cb) => {
-        const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
-        cb(null, `${uniqueSuffix}-${file.originalname}`);
+        const uniqueSuffix = `${Date.now()}-${Math.round(
+            Math.random() * 1e9
+        )}${path.extname(file.originalname)}`;
+        cb(null, `${uniqueSuffix}`);
     }
 });
 
-// File filter to allow specific file types
 const fileFilter = (req, file, cb) => {
     const allowedMimeTypes = [
         'image/jpeg',
@@ -612,23 +745,29 @@ const fileFilter = (req, file, cb) => {
         'image/png',
         'application/pdf',
         'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
         cb(null, true);
     } else {
-        cb(new Error('Unsupported file type. Only images and documents are allowed.'));
+        cb(
+            new Error(
+                'Unsupported file type. Only images and documents are allowed.'
+            )
+        );
     }
 };
 
-// Configure multer
 const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, 
+    limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter
 });
 
-module.exports = upload;
+module.exports = {
+    uploadSingle: upload.single('attachment'),
+};
 
 
 File: models\auditLog.js
@@ -669,6 +808,11 @@ File: models\comment.js
 ----------------------------------------
 const mongoose = require('mongoose');
 
+const attachmentSchema = new mongoose.Schema({
+    filename: String,
+    filepath: String
+});
+
 const commentSchema = new mongoose.Schema({
     text: {
         type: String,
@@ -689,16 +833,42 @@ const commentSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
-    attachments: [
-        {
-            filename: String,
-            filepath: String
-        }
-    ]
+    attachments: [attachmentSchema]
 });
 
 module.exports = mongoose.model('Comment', commentSchema);
 
+
+File: models\payment.js
+----------------------------------------
+const mongoose = require('mongoose');
+
+const paymentSchema = new mongoose.Schema({
+    tier:{
+        type: String,
+        required: true ,
+
+    },amount:{
+        type: Number,
+        required: true
+    },
+    paymentDate:{
+        type: Date,
+        default: Date.now
+    },
+    nextPaymentDate:{
+        type: Date,
+        required: true,
+    },
+    paymentType:{
+        type: String,
+        required: true,
+        enum:["credit","debit"],
+        default: "credit"
+    }
+});
+
+module.exports = mongoose.model('Payment', paymentSchema)
 
 File: models\role.js
 ----------------------------------------
@@ -711,11 +881,13 @@ const roleSchema = new mongoose.Schema({
         unique: true,
         trim: true
     },
-    permissions: [{
-        type: String,
-        required: true,
-        trim: true
-    }],
+    permissions: [
+        {
+            type: String,
+            required: true,
+            trim: true
+        }
+    ],
     createdAt: {
         type: Date,
         default: Date.now
@@ -727,7 +899,6 @@ module.exports = mongoose.model('Role', roleSchema);
 
 File: models\status.js
 ----------------------------------------
-// models/status.js
 const mongoose = require('mongoose');
 
 const statusSchema = new mongoose.Schema({
@@ -747,14 +918,18 @@ const statusSchema = new mongoose.Schema({
         default: false
     },
     deletedAt: Date,
-    nextStatuses: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Status'
-    }],
-    prevStatuses: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Status'
-    }],
+    nextStatuses: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Status'
+        }
+    ],
+    prevStatuses: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Status'
+        }
+    ],
     createdAt: {
         type: Date,
         default: Date.now
@@ -796,10 +971,12 @@ const taskSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     },
-    comments: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Comment'
-    }],
+    comments: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Comment'
+        }
+    ],
     priority: {
         type: String,
         enum: ['low', 'medium', 'high'],
@@ -829,17 +1006,30 @@ const userSchema = new mongoose.Schema({
         unique: true,
         trim: true
     },
+    email: { 
+        type: String,
+        required: true,
+        unique: true,
+        trim: true
+    },
     password: {
         type: String,
         required: true
     },
-    roles: [{ // A user can have multiple roles
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Role'
-    }],
+    roles: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Role'
+        }
+    ],
     createdAt: {
         type: Date,
         default: Date.now
+    },
+    isPayed:{
+        type:Boolean,
+        required:true,
+        default:false
     }
 });
 
@@ -850,7 +1040,9 @@ userSchema.pre('save', async function (next) {
     next();
 });
 
-userSchema.methods.matchPassword = async function (enteredPassword) {
+userSchema.methods.matchPassword = async function (
+    enteredPassword
+) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
 
@@ -869,13 +1061,12 @@ class AuditLogRepository extends BaseRepository {
         super(AuditLog);
     }
 
-    async getLogs(filter = {}, options = {}) {
+    async getLogs(filter = {}) {
         try {
             const logs = await this.model.find(filter)
                 .populate('performedBy', 'username roles')
-                .sort({ timestamp: -1 })
-                .skip(options.skip || 0)
-                .limit(options.limit || 20);
+                .sort({ timestamp: -1 });
+                
             return logs;
         } catch (error) {
             throw new Error(`Error fetching audit logs: ${error.message}`);
@@ -888,7 +1079,6 @@ module.exports = AuditLogRepository;
 
 File: repositories\baseRepository.js
 ----------------------------------------
-// repositories/baseRepository.js
 class BaseRepository {
     constructor(model) {
         this.model = model;
@@ -899,19 +1089,24 @@ class BaseRepository {
             const doc = await this.model.create(data);
             return doc;
         } catch (error) {
-            throw new Error(`Error creating ${this.model.modelName}: ${error.message}`);
+            throw new Error(
+                `Error creating ${this.model.modelName}: ${error.message}`
+            );
         }
     }
 
     async findAll(filter = {}, options = {}) {
         try {
-            const docs = await this.model.find(filter)
+            const docs = await this.model
+                .find(filter)
                 .skip(options.skip || 0)
                 .limit(options.limit || 100)
                 .sort(options.sort || { createdAt: -1 });
             return docs;
         } catch (error) {
-            throw new Error(`Error fetching ${this.model.modelName}s: ${error.message}`);
+            throw new Error(
+                `Error fetching ${this.model.modelName}s: ${error.message}`
+            );
         }
     }
 
@@ -920,16 +1115,31 @@ class BaseRepository {
             const doc = await this.model.findById(id).populate(populate);
             return doc;
         } catch (error) {
-            throw new Error(`${this.model.modelName} not found with id ${id}`);
+            throw new Error(
+                `${this.model.modelName} not found with id ${id}`
+            );
         }
     }
 
     async update(id, data) {
         try {
-            const updatedDoc = await this.model.findByIdAndUpdate(id, data, { new: true, runValidators: true });
+            const updatedDoc = await this.model.findByIdAndUpdate(
+/*************  ✨ Codeium Command ⭐  *************/
+    /**
+     * Deletes a document with given id
+     * @param {string} id id of the document to delete
+     * @returns {boolean} true if document was deleted successfully
+     * @throws {Error} if document with given id does not exist or if there is a mongoose error
+     */
+/******  31697937-0ee0-410b-baac-b78da818f1ba  *******/                id,
+                data,
+                { new: true, runValidators: true }
+            );
             return updatedDoc;
         } catch (error) {
-            throw new Error(`Error updating ${this.model.modelName}: ${error.message}`);
+            throw new Error(
+                `Error updating ${this.model.modelName}: ${error.message}`
+            );
         }
     }
 
@@ -938,7 +1148,9 @@ class BaseRepository {
             await this.model.findByIdAndDelete(id);
             return true;
         } catch (error) {
-            throw new Error(`Error deleting ${this.model.modelName}: ${error.message}`);
+            throw new Error(
+                `Error deleting ${this.model.modelName}: ${error.message}`
+            );
         }
     }
 }
@@ -948,7 +1160,6 @@ module.exports = BaseRepository;
 
 File: repositories\baseRepositoryWithSoftDelete.js
 ----------------------------------------
-// repositories/baseRepositoryWithSoftDelete.js
 const BaseRepository = require('./baseRepository');
 
 class BaseRepositoryWithSoftDelete extends BaseRepository {
@@ -1019,25 +1230,26 @@ class CommentRepository extends BaseRepository {
 module.exports = CommentRepository;
 
 
+File: repositories\payment.js
+----------------------------------------
+
+
 File: repositories\role.js
 ----------------------------------------
-const BaseService = require('./baseService');
+const BaseRepository = require('./baseRepository');
+const Role = require('../models/role');
 
-class RoleService extends BaseService {
-    constructor(repository) {
-        super(repository);
+class RoleRepository extends BaseRepository {
+    constructor() {
+        super(Role);
     }
 
-    async createRole(roleData) {
-        const existingRole = await this.repository.findByName(roleData.name);
-        if (existingRole) {
-            throw new Error('Role already exists');
-        }
-        return await this.repository.create(roleData);
+    async findByName(name) {
+        return await this.model.findOne({ name });
     }
 }
 
-module.exports = RoleService;
+module.exports = RoleRepository;
 
 
 File: repositories\status.js
@@ -1054,14 +1266,12 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
     }
 
     async getAllStatus(userId) {
-        // Assuming any authenticated user can view all statuses
         return await this.model.find({}).populate('nextStatuses').populate('prevStatuses');
     }
 
     async createStatus(statusData, userId) {
         const newStatus = await this.model.create(statusData);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Created',
             performedBy: userId,
@@ -1079,7 +1289,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
         await this.softDelete(id);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Soft Deleted',
             performedBy: userId,
@@ -1094,7 +1303,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
         const status = await this.restore(id);
         if (!status) throw new Error('Status not found');
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Restored',
             performedBy: userId,
@@ -1111,7 +1319,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
 
         await this.delete(id);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Permanently Deleted',
             performedBy: userId,
@@ -1125,7 +1332,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
     async modifyStatus(id, statusData, userId) {
         const status = await this.update(id, statusData);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Modified',
             performedBy: userId,
@@ -1144,7 +1350,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
         status.nextStatuses.push(nextStatusId);
         await status.save();
 
-        // Create audit log
         await AuditLog.create({
             action: 'Next Status Added',
             performedBy: userId,
@@ -1163,7 +1368,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
         status.prevStatuses.push(prevStatusId);
         await status.save();
 
-        // Create audit log
         await AuditLog.create({
             action: 'Previous Status Added',
             performedBy: userId,
@@ -1183,7 +1387,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
             throw new Error('Invalid status transition');
         }
 
-        // Create audit log
         await AuditLog.create({
             action: 'Status Transition Validated',
             performedBy: userId,
@@ -1195,7 +1398,6 @@ class StatusRepository extends BaseRepositoryWithSoftDelete {
         return true;
     }
 
-    // Additional methods if needed
 }
 
 module.exports = StatusRepository;
@@ -1613,21 +1815,21 @@ module.exports = TaskRepository;
 
 File: repositories\user.js
 ----------------------------------------
-// repositories/userRepository.js
 const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
 const AuditLog = require('../models/auditLog');
+const payment = require('../models/payment');
 
 class UserRepository extends BaseRepository {
     constructor() {
-        console.log("User Repository created");
+        console.log('User Repository created');
+        // this.Payment = Payment;
         super(User);
     }
 
     async findByUsername(username) {
         try {
-            const user = await this.model.findOne({ username });
-            return user;
+            return await this.model.findOne({ username });
         } catch (error) {
             throw new Error(`Error finding user by username: ${error.message}`);
         }
@@ -1642,7 +1844,7 @@ class UserRepository extends BaseRepository {
     }
 
     async createUser(userData) {
-        const newUser = await this.model.create(userData);
+        const newUser = await this.create(userData);
 
         // Create audit log
         await AuditLog.create({
@@ -1660,22 +1862,59 @@ class UserRepository extends BaseRepository {
         return await this.model.find({ roles: 'admin' }).select('username roles');
     }
 
-    // Additional methods if needed
 }
 
 module.exports = UserRepository;
 
 
+File: routes\comment.js
+----------------------------------------
+const express = require('express');
+const CommentController = require('../controllers/comment');
+const { protect } = require('../middleware/auth');
+const { uploadMultiple } = require('../middleware/upload');
+
+const router = express.Router();
+const commentController = new CommentController();
+
+router.post(
+    '/tasks/:taskId/comments',
+    protect,
+    uploadMultiple,
+    commentController.addComment
+);
+
+router.post(
+    '/comments/:commentId/attachments',
+    protect,
+    uploadMultiple,
+    commentController.addAttachmentsToComment
+);
+
+router.get(
+    '/comments/:commentId/attachments/:attachmentId/download',
+    protect,
+    commentController.downloadAttachment
+);
+
+router.delete(
+    '/comments/:commentId/attachments/:attachmentId',
+    protect,
+    commentController.deleteAttachment
+);
+
+module.exports = router;
+
+
 File: routes\role.js
 ----------------------------------------
-// routes/role.js
 const express = require('express');
 const { roleController } = require('../bootstrap');
-const { protect } = require('../middleware/auth');
+const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/', protect, roleController.createRole);
+router.post('/', roleController.createRole);
 router.get('/', protect, roleController.getAllRoles);
 router.get('/:id', protect, roleController.getRoleById);
 
@@ -1684,57 +1923,24 @@ module.exports = router;
 
 File: routes\status.js
 ----------------------------------------
-// routes/statusRoutes.js
 const express = require('express');
 const { statusController } = require('../bootstrap');
 const { protect } = require('../middleware/auth');
 const router = express.Router();
 
-console.log("Status router created in the routes");
+console.log('Status router created in the routes');
 
-router.get('/status', protect, (req, res, next) => {
-    statusController.getAllStatus(req, res, next);
-});
-
-router.get('/status/deleted', protect, (req, res, next) => {
-    statusController.getDeletedStatuses(req, res, next);
-});
-
-router.get('/status/:id', protect, (req, res, next) => {
-    statusController.findStatusById(req, res, next);
-});
-
-router.post('/status', protect, (req, res, next) => {
-    statusController.createStatus(req, res, next);
-});
-
-router.delete('/status/:id', protect, (req, res, next) => {
-    statusController.deleteStatus(req, res, next);
-});
-
-router.post('/status/:id/restore', protect, (req, res, next) => {
-    statusController.restoreStatus(req, res, next);
-});
-
-router.delete('/status/:id/hard-delete', protect, (req, res, next) => {
-    statusController.hardDeleteStatus(req, res, next);
-});
-
-router.put('/status/:id', protect, (req, res, next) => {
-    statusController.modifyStatus(req, res, next);
-});
-
-router.post('/status/:id/next-status', protect, (req, res, next) => {
-    statusController.addNextStatus(req, res, next);
-});
-
-router.post('/status/:id/prev-status', protect, (req, res, next) => {
-    statusController.addPrevStatus(req, res, next);
-});
-
-router.get('/status/validate-transition/:currentStatusId/:nextStatusId', protect, (req, res, next) => {
-    statusController.validateTransition(req, res, next);
-});
+router.get('/', protect, statusController.getAllStatus);
+router.get('/deleted', protect, statusController.getDeletedStatuses);
+router.get('/:id', protect, statusController.findStatusById);
+router.post('/', protect, statusController.createStatus);
+router.delete('/:id', protect, statusController.deleteStatus);
+router.post('/:id/restore', protect, statusController.restoreStatus);
+router.delete('/:id/hard-delete', protect, statusController.hardDeleteStatus);
+router.put('/:id', protect, statusController.modifyStatus);
+router.post('/:id/next-status', protect, statusController.addNextStatus);
+router.post('/:id/prev-status', protect, statusController.addPrevStatus);
+router.get('/validate-transition/:currentStatusId/:nextStatusId', protect, statusController.validateTransition);
 
 module.exports = router;
 
@@ -1747,40 +1953,32 @@ const { protect, authorize } = require('../middleware/auth');
 const { permissionsCheck } = require('../middleware/permissions');
 const router = express.Router();
 
-console.log("Task router created");
+console.log('Task router created');
 
-router.get('/tasks', protect, permissionsCheck(['VIEW_TASKS']), (req, res, next) => {
-    taskController.getAllTasks(req, res, next);
-});
+router.get('/', protect, permissionsCheck(['VIEW_TASKS']), taskController.getAllTasks);
+router.get('/assigned', protect, taskController.getTasksAssignedTo);
+router.get('/created', protect, taskController.getTasksCreatedBy);
+router.get('/deleted', protect, taskController.getDeletedTasks);
+router.get('/overdue', protect, taskController.getOverdueTasks);
+router.get('/due-today', protect, taskController.getTasksDueToday);
+router.get('/priority/:priority', protect, taskController.getTasksByPriority);
+router.get('/status/:statusId', protect, taskController.getTasksByStatus);
+router.get('/search/:searchTerm', protect, taskController.searchTasks);
+router.get('/:id', protect, taskController.getTaskById);
 
-router.get('/tasks/:id', protect, (req, res, next) => {
-    taskController.getTaskById(req, res, next);
-});
+router.post('/', protect, permissionsCheck(['CREATE_TASK']), taskController.createTask);
+router.post('/:id/assign', protect, taskController.assignTask);
+router.post('/:id/unassign', protect, taskController.unassignTask);
+router.post('/:id/restore', protect, taskController.restoreTask);
+router.post('/date-range', protect, taskController.getTasksByDateRange);
 
-router.post('/tasks', protect, permissionsCheck(['CREATE_TASK']), (req, res, next) => {
-    taskController.createTask(req, res, next);
-});
+router.put('/:id', protect, permissionsCheck(['UPDATE_TASK']), taskController.updateTask);
+router.put('/:id/end-date', protect, taskController.updateTaskEndDate);
+router.put('/:id/priority', protect, taskController.updateTaskPriority);
+router.put('/:taskId/status/:statusId', protect, taskController.updateTaskStatus);
 
-router.put('/tasks/:id', protect, permissionsCheck(['UPDATE_TASK']), (req, res, next) => {
-    taskController.updateTask(req, res, next);
-});
-
-router.put('/tasks/:taskId/status/:statusId', protect, (req, res, next) => {
-    taskController.updateTaskStatus(req, res, next);
-});
-
-router.delete('/tasks/:id', protect, permissionsCheck(['DELETE_TASK']), (req, res, next) => {
-    taskController.deleteTask(req, res, next);
-});
-
-router.post('/tasks/:taskId/comments', protect, (req, res, next) => {
-    taskController.addComment(req, res, next);
-});
-
-
-router.post('/tasks', protect, authorize('admin', 'manager'), (req, res, next) => {
-    taskController.createTask(req, res, next);
-});
+router.delete('/:id', protect, permissionsCheck(['DELETE_TASK']), taskController.deleteTask);
+router.delete('/:id/soft-delete', protect, taskController.softDeleteTask);
 
 module.exports = router;
 
@@ -1793,30 +1991,17 @@ const { protect } = require('../middleware/auth');
 const limiter = require('../middleware/rateLimit');
 
 const router = express.Router();
-console.log("User router created");
+console.log('User router created');
 
 // Register a new user (public)
-router.post('/register',limiter, (req, res, next) => {
-    console.log('req.body', req.body);
-    userController.registerUser(req, res, next);
-});
+router.post('/register', limiter, userController.registerUser);
 
 // Login user (public)
-router.post('/login', limiter, (req, res, next) => {
-    userController.loginUser(req, res, next);
-});
+router.post('/login', limiter, userController.loginUser);
 
-router.get('/:id', protect, (req, res, next) => {
-    userController.getUserById(req, res, next);
-});
-
-router.get('/', protect, (req, res, next) => {
-    userController.getAllUsers(req, res, next);
-});
-
-router.post('/assign-role', protect, (req, res, next) => {
-    userController.assignRole(req, res, next);
-});
+router.get('/:id', protect, userController.getUserById);
+router.get('/', protect, userController.getAllUsers);
+router.post('/assign-role', protect, userController.assignRole);
 
 module.exports = router;
 
@@ -1825,6 +2010,8 @@ File: script.js
 ----------------------------------------
 const fs = require('fs');
 const path = require('path');
+
+var num = 0;
 
 // Directory to start scanning
 const startDir = './'; // Change this to your starting directory if needed
@@ -1857,7 +2044,9 @@ function writeJsFilesToTxt(jsFiles, outputFile) {
     writeStream.write(`File: ${filePath}\n`);
     writeStream.write('----------------------------------------\n');
     writeStream.write(`${content}\n\n`);
+    num  = num +1;
   });
+
 
   writeStream.end();
 }
@@ -1867,13 +2056,13 @@ try {
   const jsFiles = getAllJsFiles(startDir);
   writeJsFilesToTxt(jsFiles, outputFilePath);
   console.log(`All JavaScript files have been written to ${outputFilePath}`);
+  console.log(num);
 } catch (err) {
   console.error('Error:', err);
 }
 
 File: services\auditLog.js
 ----------------------------------------
-// services/auditLogService.js
 const BaseService = require('./baseService');
 
 class AuditLogService extends BaseService {
@@ -1891,7 +2080,6 @@ module.exports = AuditLogService;
 
 File: services\baseService.js
 ----------------------------------------
-// services/baseService.js
 class BaseService {
     constructor(repository) {
         this.repository = repository;
@@ -1923,17 +2111,35 @@ module.exports = BaseService;
 
 File: services\comment.js
 ----------------------------------------
-// services/commentService.js
 const BaseService = require('./baseService');
+const fs = require('fs').promises;
 
 class CommentService extends BaseService {
     constructor(repository) {
         super(repository);
     }
 
-    async addAttachmentToComment(commentId, attachments, userId) {
-        const updatedComment = await this.repository.addAttachmentToComment(commentId, attachments);
-        return updatedComment;
+    async addAttachmentToComment(commentId, attachments) {
+        return await this.repository.addAttachments(commentId, attachments);
+    }
+
+    async deleteAttachment(commentId, attachmentId) {
+        const comment = await this.repository.findById(commentId);
+        if (!comment) {
+            throw new Error('Comment not found');
+        }
+
+        const attachment = comment.attachments.id(attachmentId);
+        if (!attachment) {
+            throw new Error('Attachment not found');
+        }
+
+        await fs.unlink(attachment.filepath).catch(err => {
+            console.error('Error deleting file:', err);
+        });
+
+        attachment.remove();
+        return await comment.save();
     }
 }
 
@@ -1942,43 +2148,42 @@ module.exports = CommentService;
 
 File: services\email.js
 ----------------------------------------
-// services/emailService.js
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-  service: process.env.EMAIL_SERVICE,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
+    service: process.env.EMAIL_SERVICE,
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
 });
 
 async function sendEmail(to, subject, text) {
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to,
-    subject,
-    text
-  };
+    const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to,
+        subject,
+        text
+    };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${to}`);
-  } catch (error) {
-    console.error('Error sending email:', error);
-  }
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log(`Email sent to ${to}`);
+    } catch (error) {
+        console.error('Error sending email:', error);
+    }
 }
 
 module.exports = {
-  sendEmail
+    sendEmail
 };
 
 
 File: services\role.js
 ----------------------------------------
-// services/roleService.js
 const BaseService = require('./baseService');
+const CustomError = require('../util/customError');
 
 class RoleService extends BaseService {
     constructor(repository) {
@@ -1987,10 +2192,20 @@ class RoleService extends BaseService {
 
     async createRole(roleData) {
         const existingRole = await this.repository.findByName(roleData.name);
+        console.log('Creating role with data:', roleData);
+        
         if (existingRole) {
-            throw new Error('Role already exists');
+            throw new CustomError('Role already exists');
         }
         return await this.repository.create(roleData);
+    }
+
+    async getAllRoles() {
+        return await this.repository.findAll();
+    }
+
+    async getRoleById(id) {
+        return await this.repository.findById(id);
     }
 }
 
@@ -1999,9 +2214,7 @@ module.exports = RoleService;
 
 File: services\status.js
 ----------------------------------------
-// services/statusService.js
 const BaseService = require('./baseService');
-const AuditLog = require('../models/auditLog');
 
 class StatusService extends BaseService {
     constructor(repository, auditLogRepository) {
@@ -2011,6 +2224,10 @@ class StatusService extends BaseService {
 
     async getAllStatus(user) {
         return await this.repository.getAllStatus(user._id);
+    }
+
+    async getDeletedStatuses(user) {
+        return await this.repository.findAllDeleted();
     }
 
     async createStatus(statusData, user) {
@@ -2052,70 +2269,168 @@ module.exports = StatusService;
 File: services\task.js
 ----------------------------------------
 const BaseService = require('./baseService');
-const {sendEmail} = require('./email');
+const { sendEmail } = require('./email');
+const UserRepository = require('../repositories/user');
+const Status = require('../models/status');
+
 class TaskService extends BaseService {
     constructor(repository, commentRepository) {
-        console.log("Task Service created");
+        console.log('Task Service created');
         super(repository);
         this.commentRepository = commentRepository;
+        this.userRepository = new UserRepository();
     }
 
-    getAllTasks(user) {
-        return this.repository.getAllTasks(user._id);
+    async getAllTasks(user) {
+        return await this.repository.getAllTasks(user._id);
     }
 
-    findById(id, user) {
-        return this.repository.findById(id, user._id);
+    async findById(id, user) {
+        return await this.repository.findById(id, user._id);
     }
 
-    
+    async createTask(taskData, user, assignedToId = null) {
+        let assignedTo = null;
+        if (assignedToId) {
+            assignedTo = await this.userRepository.findById(assignedToId);
+            if (!assignedTo) {
+                throw new Error('Assigned user not found');
+            }
+        }
 
-    updateTask(id, task, user) {
-        return this.repository.updateTask(id, task, user._id);
-    }
+        const newTask = await this.repository.createTask(
+            taskData,
+            user,
+            assignedTo
+        );
 
-   
-
-    deleteTask(id, user) {
-        return this.repository.deleteTask(id, user._id);
-    }
-
-    addComment(taskId, user, commentText) {
-        return this.repository.addComment(taskId, user._id, commentText);
-    }
-
-
-    async createTask(task, user, assignedTo = null) {
-        const newTask = await this.taskRepository.createTask(task, user, assignedTo);
-    
         if (assignedTo) {
-          await sendEmail(assignedTo.email, 'New Task Assigned', `You have been assigned a new task: ${task.title}`);
+            await sendEmail(
+                assignedTo.email,
+                'New Task Assigned',
+                `You have been assigned a new task: ${taskData.title}`
+            );
         }
-    
+
         return newTask;
-      }
-    
-      async assignTask(id, userId, assignedToId) {
-        const updatedTask = await this.taskRepository.assignTask(id, userId, assignedToId);
-    
-        const assignedToUser = await this.taskRepository.getUserById(assignedToId);  // Assuming a method to get user by ID
-        if (assignedToUser) {
-          await sendEmail(assignedToUser.email, 'Task Assigned', `You have been assigned a task: ${updatedTask.title}`);
-        }
-    
-        return updatedTask;
-      }
-    
-      async updateTaskStatus(taskId, statusId, userId) {
-        const updatedTask = await this.taskRepository.updateTaskStatus(taskId, statusId, userId);
-    
-        const taskOwner = await this.taskRepository.getUserById(updatedTask.user);
+    }
+
+    async updateTask(id, task, user) {
+        return await this.repository.updateTask(id, task, user._id);
+    }
+
+    async updateTaskStatus(taskId, statusId, user) {
+        const updatedTask = await this.repository.updateTaskStatus(
+            taskId,
+            statusId,
+            user._id
+        );
+
+        const taskOwner = await this.userRepository.findById(updatedTask.user);
         if (taskOwner) {
-          await sendEmail(taskOwner.email, 'Task Status Updated', `The status of your task "${updatedTask.title}" has been updated to "${updatedTask.status.statusName}".`);
+            const status = await Status.findById(statusId);
+            await sendEmail(
+                taskOwner.email,
+                'Task Status Updated',
+                `The status of your task "${updatedTask.title}" has been updated to "${status.statusName}".`
+            );
         }
-    
+
         return updatedTask;
-      }
+    }
+
+    async deleteTask(id, user) {
+        return await this.repository.deleteTask(id, user._id);
+    }
+
+    async assignTask(id, userId, assignedToId) {
+        const updatedTask = await this.repository.assignTask(
+            id,
+            userId,
+            assignedToId
+        );
+
+        const assignedToUser = await this.userRepository.findById(
+            assignedToId
+        );
+        if (assignedToUser) {
+            await sendEmail(
+                assignedToUser.email,
+                'Task Assigned',
+                `You have been assigned a task: ${updatedTask.title}`
+            );
+        }
+
+        return updatedTask;
+    }
+
+    async addComment(taskId, user, commentText) {
+        return await this.repository.addComment(taskId, user._id, commentText);
+    }
+
+    async getTasksByPriority(user, priority) {
+        return await this.repository.getTasksByPriority(user._id, priority);
+    }
+
+    async updateTaskPriority(id, user, priority) {
+        return await this.repository.updateTaskPriority(id, user._id, priority);
+    }
+
+    async getTasksAssignedTo(user) {
+        return await this.repository.getTasksAssignedTo(user._id);
+    }
+
+    async getTasksCreatedBy(user) {
+        return await this.repository.getTasksCreatedBy(user._id);
+    }
+
+    async softDeleteTask(id, user) {
+        return await this.repository.softDeleteTask(id, user._id);
+    }
+
+    async restoreTask(id, user) {
+        return await this.repository.restoreTask(id, user._id);
+    }
+
+    async getDeletedTasks(user) {
+        return await this.repository.getDeletedTasks(user._id);
+    }
+
+    async getTasksByStatus(user, statusId) {
+        return await this.repository.getTasksByStatus(user._id, statusId);
+    }
+
+    async getTasksByDateRange(user, startDate, endDate) {
+        return await this.repository.getTasksByDateRange(
+            user._id,
+            startDate,
+            endDate
+        );
+    }
+
+    async searchTasks(user, searchTerm) {
+        return await this.repository.searchTasks(user._id, searchTerm);
+    }
+
+    async getOverdueTasks(user) {
+        return await this.repository.getOverdueTasks(user._id);
+    }
+
+    async getTasksDueToday(user) {
+        return await this.repository.getTasksDueToday(user._id);
+    }
+
+    async unassignTask(id, user) {
+        return await this.repository.unassignTask(id, user._id);
+    }
+
+    async updateTaskEndDate(id, user, endDate) {
+        return await this.repository.updateTaskEndDate(
+            id,
+            user._id,
+            endDate
+        );
+    }
 }
 
 module.exports = TaskService;
@@ -2123,7 +2438,6 @@ module.exports = TaskService;
 
 File: services\user.js
 ----------------------------------------
-// services/userService.js
 const BaseService = require('./baseService');
 const { generateToken } = require('../util/jwt');
 
@@ -2142,8 +2456,9 @@ class UserService extends BaseService {
         return {
             _id: newUser._id,
             username: newUser.username,
+            email: newUser.email,
             roles: newUser.roles,
-            token: "Bearer " + token
+            token: 'Bearer ' + token
         };
     }
 
@@ -2157,13 +2472,14 @@ class UserService extends BaseService {
         return {
             _id: user._id,
             username: user.username,
+            email: user.email,
             roles: user.roles,
-            token: "Bearer " + token
+            token: 'Bearer ' + token
         };
     }
 
     async getUserById(id) {
-        const user = await this.repository.findById(id);
+        const user = await this.repository.findById(id).populate('roles');
         if (!user) {
             throw new Error('User not found');
         }
@@ -2171,7 +2487,7 @@ class UserService extends BaseService {
     }
 
     async getAllUsers() {
-        return await this.repository.findAll();
+        return await this.repository.findAll({}, { populate: 'roles' });
     }
 
     async assignRole(userId, roleId) {
@@ -2179,12 +2495,12 @@ class UserService extends BaseService {
         if (!user) {
             throw new Error('User not found');
         }
-    
+
         if (!user.roles.includes(roleId)) {
             user.roles.push(roleId);
             await user.save();
         }
-    
+
         return user;
     }
 }
@@ -2192,19 +2508,41 @@ class UserService extends BaseService {
 module.exports = UserService;
 
 
-File: util\jwt.js
+File: util\customError.js
 ----------------------------------------
-const jwt = require("jsonwebtoken");
+class CustomError extends Error {
+    constructor(message, statusCode) {
+        if (typeof message !== 'string') {
+            message = JSON.stringify(message);
+        }
+        super(message); 
+        this.statusCode = statusCode;
+        this.name = 'CustomError'; 
+    }
 
-const generateToken = async (userId) => {
-    const token =  await jwt.sign({id: userId},process.env.JWT_SECRET,{
-        expiresIn: "60d"
-    })
-    console.log(`@!@!@!@! this is token`)
-    console.log(token);
-    return token
-
+    static handleError(err, res) {
+        const status = err.statusCode || 500;
+        const responseMessage = err.message || 'An error occurred';
+        res.status(status).json({
+            success: false,
+            message: responseMessage,
+        });
+    }
 }
 
+module.exports = CustomError; 
+
+File: util\jwt.js
+----------------------------------------
+const jwt = require('jsonwebtoken');
+
+const generateToken = async userId => {
+    const token = await jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+        expiresIn: '60d'
+    });
+    return token;
+};
+
 module.exports = { generateToken };
+
 
