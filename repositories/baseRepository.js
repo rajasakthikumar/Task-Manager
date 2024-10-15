@@ -10,7 +10,7 @@ class BaseRepository {
             const doc = await this.model.create(data);
             return doc;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `Error creating ${this.model.modelName}: ${error.message}`
             );
         }
@@ -25,7 +25,7 @@ class BaseRepository {
                 .sort(options.sort || { createdAt: -1 });
             return docs;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `Error fetching ${this.model.modelName}s: ${error.message}`
             );
         }
@@ -46,14 +46,7 @@ class BaseRepository {
     async update(id, data) {
         try {
             const updatedDoc = await this.model.findByIdAndUpdate(
-/*************  ✨ Codeium Command ⭐  *************/
-    /**
-     * Deletes a document with given id
-     * @param {string} id id of the document to delete
-     * @returns {boolean} true if document was deleted successfully
-     * @throws {Error} if document with given id does not exist or if there is a mongoose error
-     */
-/******  31697937-0ee0-410b-baac-b78da818f1ba  *******/                id,
+              id,
                 data,
                 { new: true, runValidators: true }
             );

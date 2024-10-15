@@ -9,9 +9,9 @@ const roleSchema = new mongoose.Schema({
     },
     permissions: [
         {
-            type: String,
-            required: true,
-            trim: true
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Permission',
+            required: false
         }
     ],
     createdAt: {

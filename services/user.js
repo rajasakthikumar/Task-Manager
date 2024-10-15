@@ -22,7 +22,13 @@ class UserService extends BaseService {
             userData.roles = role._id; 
         }
 
-        const newUser = await this.repository.createUser(userData);
+        await newUser.populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
 
         const token = await generateToken(newUser._id);
 
@@ -41,9 +47,15 @@ class UserService extends BaseService {
             throw new CustomError('Invalid username or password');
         }
     
-        const foundUser = await this.repository.model
-            .findById(user._id)
-            .populate('roles'); 
+         const foundUser = await this.repository.model
+        .findById(user._id)
+        .populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
     
         const token = await generateToken(foundUser._id);
     
@@ -96,7 +108,16 @@ class UserService extends BaseService {
                 console.log('@!@!@!@! Role already assigned to the user');
             }
     
-            const savedUser =  await this.repository.findById(userId);
+            const savedUser =  await this.repository.model
+            .findById(userId)
+            .populate({
+                path: 'roles',
+                populate: {
+                    path: 'permissions',
+                    model: 'Permission'
+                }
+            });
+            
             return await savedUser.populate('roles');
         } catch (error) {
             console.error('Error in assignRole function:', error);

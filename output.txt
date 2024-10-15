@@ -561,6 +561,8 @@ const userRoutes = require('./routes/user');
 const roleRoutes = require('./routes/role');
 // const commentRoutes = require('./routes/comment');
 
+const seedPermissionsAndRoles = require('./seed');
+
 dotenv.config();
 
 const app = express();
@@ -585,13 +587,19 @@ app.use((err, req, res, next) => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
-require('./config/db'); 
+const startServer = async () => {
+    try {
+        await require('./config/db'); 
+        await seedPermissionsAndRoles(); 
+        app.listen(PORT, () => {
+            console.log(`Server running on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+    }
+};
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
-
+startServer();
 
 File: middleware\asynchandler.js
 ----------------------------------------
@@ -640,20 +648,12 @@ const protect = asyncHandler(async (req, res, next) => {
     }
 });
 
-const authorize = (...allowedRoles) => {
+const authorize = (...requiredPermissions) => {
     return asyncHandler(async (req, res, next) => {
-        if (!req.user) {
-            throw new Error('Not authorized');
-        }
-        await req.user.populate('roles').execPopulate();
-        const userRoles = req.user.roles.map(role => role.name);
-        const hasRole = userRoles.some(role =>
-            allowedRoles.includes(role)
-        );
-        if (!hasRole) {
-            return res.status(403).json({
-                message: 'Forbidden: You do not have access to this resource'
-            });
+        const userPermissions = req.user.roles.flatMap(role => role.permissions.map(p => p.name));
+        const hasPermission = requiredPermissions.every(permission => userPermissions.includes(permission));
+        if (!hasPermission) {
+            return res.status(403).json({ message: 'You do not have  required permissions' });
         }
         next();
     });
@@ -878,6 +878,30 @@ const paymentSchema = new mongoose.Schema({
 
 module.exports = mongoose.model('Payment', paymentSchema)
 
+File: models\permission.js
+----------------------------------------
+const mongoose = require('mongoose');
+
+const permissionSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true
+    },
+    description: {
+        type: String,
+        trim: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+module.exports = mongoose.model('Permission', permissionSchema);
+
+
 File: models\role.js
 ----------------------------------------
 const mongoose = require('mongoose');
@@ -891,9 +915,9 @@ const roleSchema = new mongoose.Schema({
     },
     permissions: [
         {
-            type: String,
-            required: true,
-            trim: true
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Permission',
+            required: false
         }
     ],
     createdAt: {
@@ -1016,7 +1040,7 @@ const userSchema = new mongoose.Schema({
     },
     email: { 
         type: String,
-        required: true,
+        required: false,
         unique: true,
         trim: true
     },
@@ -1028,7 +1052,7 @@ const userSchema = new mongoose.Schema({
         {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Role',
-            required: true
+            required: false
         }
     ],
     createdAt: {
@@ -1100,7 +1124,7 @@ class BaseRepository {
             const doc = await this.model.create(data);
             return doc;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `Error creating ${this.model.modelName}: ${error.message}`
             );
         }
@@ -1115,7 +1139,7 @@ class BaseRepository {
                 .sort(options.sort || { createdAt: -1 });
             return docs;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `Error fetching ${this.model.modelName}s: ${error.message}`
             );
         }
@@ -1136,14 +1160,7 @@ class BaseRepository {
     async update(id, data) {
         try {
             const updatedDoc = await this.model.findByIdAndUpdate(
-/*************  ✨ Codeium Command ⭐  *************/
-    /**
-     * Deletes a document with given id
-     * @param {string} id id of the document to delete
-     * @returns {boolean} true if document was deleted successfully
-     * @throws {Error} if document with given id does not exist or if there is a mongoose error
-     */
-/******  31697937-0ee0-410b-baac-b78da818f1ba  *******/                id,
+              id,
                 data,
                 { new: true, runValidators: true }
             );
@@ -1246,6 +1263,23 @@ File: repositories\payment.js
 ----------------------------------------
 
 
+File: repositories\permission.js
+----------------------------------------
+const BaseRepository = require('./baseRepositoryWithSoftDelete');
+const Permission = require('../models/permission');
+
+class PermissionRepository extends BaseRepository {
+    constructor() {
+        super(Permission);
+    }
+
+    async findByName(name) {
+        return await this.model.findOne({name});
+    }
+}
+
+module.exports = PermissionRepository;
+
 File: repositories\role.js
 ----------------------------------------
 const BaseRepository = require('./baseRepository');
@@ -1257,12 +1291,12 @@ class RoleRepository extends BaseRepository {
     }
 
     async findByName(name) {
-        return await this.model.findOne({ name });
+        return await this.model.findOne({ name }).populate('permissions');
     }
 
     async findById(id) {
         console.log("@!@!@!@! Controle reached here");
-        return await this.model.findById(id);
+        return await this.model.findById(id).populate('permissions');
     }
 
 }
@@ -1984,12 +2018,11 @@ File: routes\task.js
 const express = require('express');
 const { taskController } = require('../bootstrap');
 const { protect, authorize } = require('../middleware/auth');
-const { permissionsCheck } = require('../middleware/permissions');
 const router = express.Router();
 
 console.log('Task router created');
 
-router.get('/', protect, permissionsCheck(['VIEW_TASKS']), taskController.getAllTasks);
+router.get('/', protect, authorize(['VIEW_TASKS']), taskController.getAllTasks);
 router.get('/assigned', protect, taskController.getTasksAssignedTo);
 router.get('/created', protect, taskController.getTasksCreatedBy);
 router.get('/deleted', protect, taskController.getDeletedTasks);
@@ -2000,18 +2033,18 @@ router.get('/status/:statusId', protect, taskController.getTasksByStatus);
 router.get('/search/:searchTerm', protect, taskController.searchTasks);
 router.get('/:id', protect, taskController.getTaskById);
 
-router.post('/', protect, permissionsCheck(['CREATE_TASK']), taskController.createTask);
+router.post('/', protect, authorize(['CREATE_TASK']), taskController.createTask);
 router.post('/:id/assign', protect, taskController.assignTask);
 router.post('/:id/unassign', protect, taskController.unassignTask);
 router.post('/:id/restore', protect, taskController.restoreTask);
 router.post('/date-range', protect, taskController.getTasksByDateRange);
 
-router.put('/:id', protect, permissionsCheck(['UPDATE_TASK']), taskController.updateTask);
+router.put('/:id', protect, authorize(['UPDATE_TASK']), taskController.updateTask);
 router.put('/:id/end-date', protect, taskController.updateTaskEndDate);
 router.put('/:id/priority', protect, taskController.updateTaskPriority);
 router.put('/:taskId/status/:statusId', protect, taskController.updateTaskStatus);
 
-router.delete('/:id', protect, permissionsCheck(['DELETE_TASK']), taskController.deleteTask);
+router.delete('/:id', protect, authorize(['DELETE_TASK']), taskController.deleteTask);
 router.delete('/:id/soft-delete', protect, taskController.softDeleteTask);
 
 module.exports = router;
@@ -2094,6 +2127,53 @@ try {
 } catch (err) {
   console.error('Error:', err);
 }
+
+File: seed.js
+----------------------------------------
+const Permission = require('./models/permission');
+const Role = require('./models/role');
+
+const seedPermissionsAndRoles = async () => {
+    // Define permissions
+    const permissions = [
+        { name: 'VIEW_TASKS', description: 'View all tasks' },
+        { name: 'CREATE_TASK', description: 'Create new task' },
+        { name: 'UPDATE_TASK', description: 'Update existing task' },
+        { name: 'DELETE_TASK', description: 'Delete task' }
+    ];
+
+    // Seed permissions
+    for (const permissionData of permissions) {
+        const existingPermission = await Permission.findOne({ name: permissionData.name });
+        if (!existingPermission) {
+            await Permission.create(permissionData);
+        }
+    }
+
+    // Define roles and map permissions to roles
+    const roles = [
+        { name: 'admin', permissions: ['VIEW_TASKS', 'CREATE_TASK', 'UPDATE_TASK', 'DELETE_TASK'] },
+        { name: 'user', permissions: ['VIEW_TASKS'] }
+    ];
+
+    // Seed roles
+    for (const roleData of roles) {
+        const existingRole = await Role.findOne({ name: roleData.name });
+        if (!existingRole) {
+            const rolePermissions = await Permission.find({ name: { $in: roleData.permissions } });
+            const newRole = new Role({ name: roleData.name, permissions: rolePermissions.map(p => p._id) });
+            await newRole.save();
+        }
+    }
+
+
+
+    console.log('Permissions and roles seeded successfully.');
+};
+
+
+module.exports = seedPermissionsAndRoles;
+
 
 File: services\auditLog.js
 ----------------------------------------
@@ -2548,23 +2628,38 @@ class UserService extends BaseService {
     }
 
     async assignRole(userId, roleId) {
-        console.log("@!@!@!@! Reached service layer");
-        const user = await this.repository.findById(userId);
-        if (!user) {
-            throw new CustomError('User not found');
+        try {
+            
+            const user = await this.repository.findById(userId);
+            if (!user) {
+                throw new CustomError('User not found');
+            }
+    
+            const role = await this.roleRepository.findById(roleId);
+            if (!role) {
+                throw new CustomError('Role not found');
+            }
+    
+            if (!user.roles.includes(roleId)) {
+                user.roles.push(roleId);
+    
+                try {
+                    await user.save();
+                    console.log('@!@!@!@! Roles assigning completed');
+                } catch (error) {
+                    console.error('Error while saving user:', error);
+                    throw new CustomError('Error while saving user role');
+                }
+            } else {
+                console.log('@!@!@!@! Role already assigned to the user');
+            }
+    
+            const savedUser =  await this.repository.findById(userId);
+            return await savedUser.populate('roles');
+        } catch (error) {
+            console.error('Error in assignRole function:', error);
+            throw new CustomError('Internal Server Error');
         }
-        console.log("@!@!@!@! user found");
-        const role = await this.roleRepository.findById(roleId);
-        if (!role) {
-            throw new CustomError('Role not found');
-        }
-        console.log("@!@!@!@! user and role are found");
-        if (!user.roles.includes(roleId)) {
-            user.roles.push(roles);
-            await user.save(); 
-        }
-
-        return await this.repository.findById(userId).populate('roles');
     }
 }
 

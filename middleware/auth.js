@@ -19,8 +19,15 @@ const protect = asyncHandler(async (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = await User.findById(decoded.id).select('-password');
-
+        req.user = await User.findById(decoded.id)
+        .select('-password')
+        .populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
         if (!req.user) {
             return res.status(401).json({
                 message: 'Not authorized, user not found'
@@ -36,20 +43,12 @@ const protect = asyncHandler(async (req, res, next) => {
     }
 });
 
-const authorize = (...allowedRoles) => {
+const authorize = (...requiredPermissions) => {
     return asyncHandler(async (req, res, next) => {
-        if (!req.user) {
-            throw new Error('Not authorized');
-        }
-        await req.user.populate('roles').execPopulate();
-        const userRoles = req.user.roles.map(role => role.name);
-        const hasRole = userRoles.some(role =>
-            allowedRoles.includes(role)
-        );
-        if (!hasRole) {
-            return res.status(403).json({
-                message: 'Forbidden: You do not have access to this resource'
-            });
+        const userPermissions = req.user.roles.flatMap(role => role.permissions.map(p => p.name));
+        const hasPermission = requiredPermissions.every(permission => userPermissions.includes(permission));
+        if (!hasPermission) {
+            return res.status(403).json({ message: 'You do not have  required permissions' });
         }
         next();
     });

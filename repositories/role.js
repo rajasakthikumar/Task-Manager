@@ -7,12 +7,12 @@ class RoleRepository extends BaseRepository {
     }
 
     async findByName(name) {
-        return await this.model.findOne({ name });
+        return await this.model.findOne({ name }).populate('permissions');
     }
 
     async findById(id) {
         console.log("@!@!@!@! Controle reached here");
-        return await this.model.findById(id);
+        return await this.model.findById(id).populate('permissions');
     }
 
 }

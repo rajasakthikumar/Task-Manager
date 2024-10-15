@@ -9,6 +9,8 @@ const userRoutes = require('./routes/user');
 const roleRoutes = require('./routes/role');
 // const commentRoutes = require('./routes/comment');
 
+const seedPermissionsAndRoles = require('./seed');
+
 dotenv.config();
 
 const app = express();
@@ -33,9 +35,16 @@ app.use((err, req, res, next) => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
-require('./config/db'); 
+const startServer = async () => {
+    try {
+        await require('./config/db'); 
+        await seedPermissionsAndRoles(); 
+        app.listen(PORT, () => {
+            console.log(`Server running on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+    }
+};
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+startServer();
