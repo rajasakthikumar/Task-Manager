@@ -1,6 +1,7 @@
 const BaseService = require('./baseService');
 const { generateToken } = require('../util/jwt');
 const CustomError = require('../util/customError');
+const { populateRolesAndPermissions } = require('../utils/populate'); 
 
 class UserService extends BaseService {
     constructor(userRepository, roleRepository) {
@@ -17,18 +18,14 @@ class UserService extends BaseService {
         if (!userData.roles) {
             const role = await this.roleRepository.findByName('user');
             if (!role) {
-                throw new CustomError('user role not found', 500);
+                throw new CustomError('User role not found', 500);
             }
             userData.roles = role._id; 
         }
 
-        await newUser.populate({
-            path: 'roles',
-            populate: {
-                path: 'permissions',
-                model: 'Permission'
-            }
-        });
+        const newUser = await this.repository.create(userData);
+        
+        await populateRolesAndPermissions(newUser);
 
         const token = await generateToken(newUser._id);
 
@@ -46,19 +43,11 @@ class UserService extends BaseService {
         if (!user) {
             throw new CustomError('Invalid username or password');
         }
-    
-         const foundUser = await this.repository.model
-        .findById(user._id)
-        .populate({
-            path: 'roles',
-            populate: {
-                path: 'permissions',
-                model: 'Permission'
-            }
-        });
-    
+
+        const foundUser = await populateRolesAndPermissions(this.repository.model.findById(user._id));
+
         const token = await generateToken(foundUser._id);
-    
+
         return {
             _id: foundUser._id,
             username: foundUser.username,
@@ -67,17 +56,10 @@ class UserService extends BaseService {
             token: 'Bearer ' + token
         };
     }
-    
 
     async getUserById(id) {
-        const user = await this.repository.findById(id).populate({
-            path: 'roles',
-            populate: {
-                path: 'permissions',
-                model: 'Permission'
-            }
-        });
-
+        const query = this.repository.model.findById(id);
+        const user = await populateRolesAndPermissions(query);
         if (!user) {
             throw new CustomError('User not found');
         }
@@ -85,56 +67,38 @@ class UserService extends BaseService {
     }
 
     async getAllUsers() {
-  return await this.repository.findAll({}, {
-    populate: {
-      path: 'roles',
-      populate: {
-        path: 'permissions',
-        model: 'Permission',
-      },
-    },
-  });
-}
-
+        const query = this.repository.model.find({});
+        return await populateRolesAndPermissions(query);
+    }
 
     async assignRole(userId, roleId) {
         try {
-            
             const user = await this.repository.findById(userId);
             if (!user) {
                 throw new CustomError('User not found');
             }
-    
+
             const role = await this.roleRepository.findById(roleId);
             if (!role) {
                 throw new CustomError('Role not found');
             }
-    
+
             if (!user.roles.includes(roleId)) {
                 user.roles.push(roleId);
-    
+
                 try {
                     await user.save();
-                    console.log('@!@!@!@! Roles assigning completed');
+                    console.log('Roles assigned successfully');
                 } catch (error) {
                     console.error('Error while saving user:', error);
                     throw new CustomError('Error while saving user role');
                 }
             } else {
-                console.log('@!@!@!@! Role already assigned to the user');
+                console.log('Role already assigned to the user');
             }
-    
-            const savedUser =  await this.repository.model
-            .findById(userId)
-            .populate({
-                path: 'roles',
-                populate: {
-                    path: 'permissions',
-                    model: 'Permission'
-                }
-            });
 
-            return await savedUser
+            const savedUser = await populateRolesAndPermissions(this.repository.model.findById(userId));
+            return savedUser;
         } catch (error) {
             console.error('Error in assignRole function:', error);
             throw new CustomError('Internal Server Error');
