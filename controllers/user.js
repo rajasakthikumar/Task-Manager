@@ -8,13 +8,14 @@ class UserController {
     }
 
     registerUser = asyncHandler(async (req, res) => {
-        const { username, email, password } = req.body;
+        const { username, email, password,roles } = req.body;
         console.log(`@!@!@!@!@! USerController ${username}`);
 
         const user = await this.userService.registerUser({
             username,
             email,
-            password
+            password,
+            roles
         });
 
         console.log(`@!@!@!@! registerUSer Called`)
@@ -42,11 +43,9 @@ class UserController {
     });
 
     assignRole = asyncHandler(async (req, res) => {
-        const { userId, roleId } = req.body;
-        const updatedUser = await this.userService.assignRole(
-            userId,
-            roleId
-        );
+        const { userId, roles } = req.body;
+        console.log("@!@!@!@! userController",userId ,roles)
+        const updatedUser = await this.userService.assignRole(userId, roles);
         res.status(200).json(updatedUser);
     });
 }

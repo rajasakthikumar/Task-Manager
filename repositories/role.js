@@ -9,6 +9,12 @@ class RoleRepository extends BaseRepository {
     async findByName(name) {
         return await this.model.findOne({ name });
     }
+
+    async findById(id) {
+        console.log("@!@!@!@! Controle reached here");
+        return await this.model.findById(id);
+    }
+
 }
 
 module.exports = RoleRepository;

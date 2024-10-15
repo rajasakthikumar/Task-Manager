@@ -27,7 +27,7 @@ const auditLogRepository = new AuditLogRepository();
 
 const taskService = new TaskService(taskRepository, commentRepository);
 const statusService = new StatusService(statusRepository, auditLogRepository);
-const userService = new UserService(userRepository);
+const userService = new UserService(userRepository,roleRepository);
 const roleService = new RoleService(roleRepository);
 const auditLogService = new AuditLogService(auditLogRepository);
 const commentService = new CommentService(commentRepository);
@@ -36,7 +36,7 @@ const taskController = new TaskController(taskService);
 const statusController = new StatusController(statusService);
 const userController = new UserController(userService);
 const roleController = new RoleController(roleService);
-const commentController = new CommentController();
+const commentController = new CommentController(commentService);
 
 module.exports = {
     taskController,
@@ -46,9 +46,9 @@ module.exports = {
     commentController
 };
 
-
 File: config\db.js
 ----------------------------------------
+// config/db.js
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 
@@ -56,9 +56,7 @@ dotenv.config();
 const uri = process.env.DBURI;
 
 if (!uri) {
-  throw new Error(
-    'MongoDB URI is missing. Make sure DBURI is defined.'
-  );
+  throw new Error(' Make sure DBURI is not defined.');
 }
 
 mongoose
@@ -496,6 +494,7 @@ module.exports = TaskController;
 File: controllers\user.js
 ----------------------------------------
 const asyncHandler = require('../middleware/asynchandler');
+const CustomError = require('../util/customError');
 
 class UserController {
     constructor(userService) {
@@ -504,12 +503,17 @@ class UserController {
     }
 
     registerUser = asyncHandler(async (req, res) => {
-        const { username, email, password } = req.body;
+        const { username, email, password,roles } = req.body;
+        console.log(`@!@!@!@!@! USerController ${username}`);
+
         const user = await this.userService.registerUser({
             username,
             email,
-            password
+            password,
+            roles
         });
+
+        console.log(`@!@!@!@! registerUSer Called`)
         res.status(201).json(user);
     });
 
@@ -534,11 +538,9 @@ class UserController {
     });
 
     assignRole = asyncHandler(async (req, res) => {
-        const { userId, roleId } = req.body;
-        const updatedUser = await this.userService.assignRole(
-            userId,
-            roleId
-        );
+        const { userId, roles } = req.body;
+        console.log("@!@!@!@! userController",userId ,roles)
+        const updatedUser = await this.userService.assignRole(userId, roles);
         res.status(200).json(updatedUser);
     });
 }
@@ -576,7 +578,6 @@ app.use((err, req, res, next) => {
     if (err instanceof CustomError) {
         CustomError.handleError(err, res);
     } else {
-        // If it's not a CustomError, you can send a generic response
         res.status(500).json({
             success: false,
             message: 'Internal Server Error'
@@ -663,15 +664,22 @@ module.exports = { protect, authorize };
 
 File: middleware\errorHandler.js
 ----------------------------------------
-const errorHandler = (err, req, res, next) => {
-    console.error(err.stack);
-    res.status(err.statusCode || 500).json({
-        message: err.message || 'Server Error'
+const CustomError = require("../util/customError");
+
+const errorHandler = (err,req,res,next) => {
+    console.error('Error:' ,err);
+
+    if(err instanceof CustomError) {
+        return CustomError.handleError(err,res);
+    }
+
+    res.status(500).json({
+        success: false,
+        message: 'Something went wrong'
     });
-};
+}
 
 module.exports = errorHandler;
-
 
 File: middleware\permissions.js
 ----------------------------------------
@@ -1019,7 +1027,8 @@ const userSchema = new mongoose.Schema({
     roles: [
         {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'Role'
+            ref: 'Role',
+            required: true
         }
     ],
     createdAt: {
@@ -1079,6 +1088,8 @@ module.exports = AuditLogRepository;
 
 File: repositories\baseRepository.js
 ----------------------------------------
+const CustomError = require("../util/customError");
+
 class BaseRepository {
     constructor(model) {
         this.model = model;
@@ -1111,11 +1122,12 @@ class BaseRepository {
     }
 
     async findById(id, populate = '') {
+        console.log('@!@!@!@! reached bas repository');
         try {
             const doc = await this.model.findById(id).populate(populate);
             return doc;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `${this.model.modelName} not found with id ${id}`
             );
         }
@@ -1247,6 +1259,12 @@ class RoleRepository extends BaseRepository {
     async findByName(name) {
         return await this.model.findOne({ name });
     }
+
+    async findById(id) {
+        console.log("@!@!@!@! Controle reached here");
+        return await this.model.findById(id);
+    }
+
 }
 
 module.exports = RoleRepository;
@@ -1434,8 +1452,8 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
                 })
                 .populate('status');
 
-            console.log(`@!@!@!@! this is task ${tasks}`);
-            if (!tasks || tasks.length === 0) throw new Error('Tasks not found or unauthorized');
+            if (!tasks || tasks.length === 0)
+                throw new Error('Tasks not found or unauthorized');
             return tasks;
         } catch (error) {
             throw new Error(`Error fetching tasks: ${error.message}`);
@@ -1443,10 +1461,11 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
     }
 
     async findById(id, userId) {
-        const task = await this.model.findOne({
-            _id: id,
-            $or: [{ user: userId }, { assignedTo: userId }]
-        })
+        const task = await this.model
+            .findOne({
+                _id: id,
+                $or: [{ user: userId }, { assignedTo: userId }]
+            })
             .populate({
                 path: 'comments',
                 populate: {
@@ -1470,68 +1489,52 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         }
 
         const taskToCreate = {
-            ...task,
-            status: openStatus._id,
+            ...taskData,
+            status: status._id,
             user: user._id,
-            assignedTo: assignedTo ? assignedTo._id : null
+            assignedTo: assignedTo ? assignedTo._id : null,
+            createdDate: new Date()
         };
 
-        // Create the task
         const newTask = await this.model.create(taskToCreate);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Task Created',
             performedBy: user._id,
             entity: 'Task',
             entityId: newTask._id,
-            changes: { taskData: task, assignedTo: assignedTo ? assignedTo._id : null }
+            changes: taskData
         });
 
-        // Populate the status field before returning the task
-        const populatedTask = await this.model.findById(newTask._id).populate('status');
+        const populatedTask = await this.model
+            .findById(newTask._id)
+            .populate('status');
 
         return populatedTask;
     }
 
     async updateTask(id, updatedTask, userId) {
         const task = await this.findById(id, userId);
-        console.log('@!@!@!@! Reached here');
 
-        // Only the creator or assigned user can update the task
-        if (task.user.toString() !== userId.toString() && task.assignedTo.toString() !== userId.toString()) {
-            throw new Error('Only the creator or assigned user can update this task');
+        if (
+            task.user.toString() !== userId.toString() &&
+            task.assignedTo.toString() !== userId.toString()
+        ) {
+            throw new Error(
+                'Only the creator or assigned user can update this task'
+            );
         }
 
         task.title = updatedTask.title || task.title;
         task.description = updatedTask.description || task.description;
         task.modifiedDate = new Date();
 
-        // Create audit log
         await AuditLog.create({
             action: 'Task Updated',
             performedBy: userId,
             entity: 'Task',
             entityId: task._id,
-            changes: { title: task.title, description: task.description }
-        });
-
-        return await task.save();
-    }
-
-    async assignTask(id, userId, assignedToId) {
-        const task = await this.model.findOne({ _id: id, user: userId });
-        if (!task) throw new Error('Task not found or unauthorized');
-
-        task.assignedTo = assignedToId;
-
-        // Create audit log
-        await AuditLog.create({
-            action: 'Task Assigned',
-            performedBy: userId,
-            entity: 'Task',
-            entityId: task._id,
-            changes: { assignedTo: assignedToId }
+            changes: updatedTask
         });
 
         return await task.save();
@@ -1543,14 +1546,17 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         const status = await Status.findById(statusId);
         if (!status) throw new Error('Status not found');
 
+        if (!(await this.validateStatusTransition(task.status, statusId))) {
+            throw new Error('Invalid status transition');
+        }
+
         task.status = status._id;
         task.modifiedDate = new Date();
 
-        if (status.statusName === 'completed') {
+        if (status.statusName.toLowerCase() === 'completed') {
             task.endDate = new Date();
         }
 
-        // Create audit log
         await AuditLog.create({
             action: 'Task Status Updated',
             performedBy: userId,
@@ -1562,10 +1568,36 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         return await task.save();
     }
 
+    async validateStatusTransition(currentStatusId, nextStatusId) {
+        const currentStatus = await Status.findById(currentStatusId);
+        if (!currentStatus) throw new Error('Current status not found');
+
+        const isValidTransition = currentStatus.nextStatuses.includes(
+            nextStatusId
+        );
+        return isValidTransition;
+    }
+
+    async assignTask(id, userId, assignedToId) {
+        const task = await this.model.findOne({ _id: id, user: userId });
+        if (!task) throw new Error('Task not found or unauthorized');
+
+        task.assignedTo = assignedToId;
+
+        await AuditLog.create({
+            action: 'Task Assigned',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { assignedTo: assignedToId }
+        });
+
+        return await task.save();
+    }
+
     async deleteTask(id, userId) {
         const task = await this.findById(id, userId);
 
-        // Create audit log
         await AuditLog.create({
             action: 'Task Deleted',
             performedBy: userId,
@@ -1576,92 +1608,12 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         return await this.model.findByIdAndDelete(id);
     }
 
-    async addComment(taskId, userId, commentText) {
-        const task = await this.model.findById(taskId);
-
-        if (!task) {
-            throw new Error('Task not found');
-        }
-
-        if (task.user.toString() !== userId.toString() && task.assignedTo.toString() !== userId.toString()) {
-            throw new Error('Only the creator or assigned user can comment on this task');
-        }
-
-        const newComment = await Comment.create({
-            text: commentText,
-            createdBy: userId,
-            task: taskId
-        });
-
-        task.comments.push(newComment._id);
-        await task.save();
-
-        // Create audit log
-        await AuditLog.create({
-            action: 'Comment Added',
-            performedBy: userId,
-            entity: 'Comment',
-            entityId: newComment._id,
-            changes: { text: commentText, taskId }
-        });
-
-        return newComment;
-    }
-
-    async getTasksByPriority(userId, priority) {
-        const validPriorities = ['low', 'medium', 'high'];
-        if (!validPriorities.includes(priority)) {
-            throw new Error('Invalid priority value');
-        }
-
-        return await this.model.find({
-            $or: [{ user: userId }, { assignedTo: userId }],
-            priority: priority
-        }).populate('status');
-    }
-
-    async updateTaskPriority(id, userId, priority) {
-        const task = await this.findById(id, userId);
-
-        const validPriorities = ['low', 'medium', 'high'];
-        if (!validPriorities.includes(priority)) {
-            throw new Error('Invalid priority value');
-        }
-
-        task.priority = priority;
-        task.modifiedDate = new Date();
-
-        // Create audit log
-        await AuditLog.create({
-            action: 'Task Priority Updated',
-            performedBy: userId,
-            entity: 'Task',
-            entityId: task._id,
-            changes: { priority: priority }
-        });
-
-        return await task.save();
-    }
-
-    async getTasksAssignedTo(userId) {
-        return await this.model.find({
-            assignedTo: userId
-        }).populate('status');
-    }
-
-    async getTasksCreatedBy(userId) {
-        return await this.model.find({
-            user: userId
-        }).populate('status');
-    }
-
     async softDeleteTask(id, userId) {
         const task = await this.findById(id, userId);
 
         task.isDeleted = true;
         task.deletedDate = new Date();
 
-        // Create audit log
         await AuditLog.create({
             action: 'Task Soft Deleted',
             performedBy: userId,
@@ -1684,7 +1636,6 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         task.isDeleted = false;
         task.deletedDate = null;
 
-        // Create audit log
         await AuditLog.create({
             action: 'Task Restored',
             performedBy: userId,
@@ -1695,18 +1646,110 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         return await task.save();
     }
 
+    async addComment(taskId, userId, commentText) {
+        const task = await this.model.findById(taskId);
+
+        if (!task) {
+            throw new Error('Task not found');
+        }
+
+        if (
+            task.user.toString() !== userId.toString() &&
+            task.assignedTo.toString() !== userId.toString()
+        ) {
+            throw new Error(
+                'Only the creator or assigned user can comment on this task'
+            );
+        }
+
+        const newComment = await Comment.create({
+            text: commentText,
+            createdBy: userId,
+            task: taskId
+        });
+
+        task.comments.push(newComment._id);
+        await task.save();
+
+        await AuditLog.create({
+            action: 'Comment Added',
+            performedBy: userId,
+            entity: 'Comment',
+            entityId: newComment._id,
+            changes: { text: commentText, taskId }
+        });
+
+        return newComment;
+    }
+
+    async getTasksByPriority(userId, priority) {
+        const validPriorities = ['low', 'medium', 'high'];
+        if (!validPriorities.includes(priority)) {
+            throw new Error('Invalid priority value');
+        }
+
+        return await this.model
+            .find({
+                $or: [{ user: userId }, { assignedTo: userId }],
+                priority: priority
+            })
+            .populate('status');
+    }
+
+    async updateTaskPriority(id, userId, priority) {
+        const task = await this.findById(id, userId);
+
+        const validPriorities = ['low', 'medium', 'high'];
+        if (!validPriorities.includes(priority)) {
+            throw new Error('Invalid priority value');
+        }
+
+        task.priority = priority;
+        task.modifiedDate = new Date();
+
+        await AuditLog.create({
+            action: 'Task Priority Updated',
+            performedBy: userId,
+            entity: 'Task',
+            entityId: task._id,
+            changes: { priority: priority }
+        });
+
+        return await task.save();
+    }
+
+    async getTasksAssignedTo(userId) {
+        return await this.model
+            .find({
+                assignedTo: userId
+            })
+            .populate('status');
+    }
+
+    async getTasksCreatedBy(userId) {
+        return await this.model
+            .find({
+                user: userId
+            })
+            .populate('status');
+    }
+
     async getDeletedTasks(userId) {
-        return await this.model.find({
-            isDeleted: true,
-            $or: [{ user: userId }, { assignedTo: userId }]
-        }).populate('status');
+        return await this.model
+            .find({
+                isDeleted: true,
+                $or: [{ user: userId }, { assignedTo: userId }]
+            })
+            .populate('status');
     }
 
     async getTasksByStatus(userId, statusId) {
-        return await this.model.find({
-            $or: [{ user: userId }, { assignedTo: userId }],
-            status: statusId
-        }).populate('status');
+        return await this.model
+            .find({
+                $or: [{ user: userId }, { assignedTo: userId }],
+                status: statusId
+            })
+            .populate('status');
     }
 
     async getTasksByDateRange(userId, startDate, endDate) {
@@ -1719,28 +1762,33 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
     }
 
     async searchTasks(userId, searchTerm) {
-        return await this.model.find({
-            $or: [{ user: userId }, { assignedTo: userId }],
-            $or: [
-                { title: new RegExp(searchTerm, 'i') },
-                { description: new RegExp(searchTerm, 'i') }
-            ]
-        }).populate('status');
+        return await this.model
+            .find({
+                $or: [{ user: userId }, { assignedTo: userId }],
+                $or: [
+                    { title: new RegExp(searchTerm, 'i') },
+                    { description: new RegExp(searchTerm, 'i') }
+                ]
+            })
+            .populate('status');
     }
 
     async getOverdueTasks(userId) {
         const today = new Date();
 
-        // Get the 'completed' status id
-        const completedStatus = await Status.findOne({ statusName: 'completed' });
+        const completedStatus = await Status.findOne({
+            statusName: 'completed'
+        });
 
         if (!completedStatus) throw new Error('Completed status not found');
 
-        return await this.model.find({
-            $or: [{ user: userId }, { assignedTo: userId }],
-            endDate: { $lt: today },
-            status: { $ne: completedStatus._id }
-        }).populate('status');
+        return await this.model
+            .find({
+                $or: [{ user: userId }, { assignedTo: userId }],
+                endDate: { $lt: today },
+                status: { $ne: completedStatus._id }
+            })
+            .populate('status');
     }
 
     async getTasksDueToday(userId) {
@@ -1750,10 +1798,12 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         const endOfDay = new Date();
         endOfDay.setHours(23, 59, 59, 999);
 
-        return await this.model.find({
-            $or: [{ user: userId }, { assignedTo: userId }],
-            endDate: { $gte: startOfDay, $lte: endOfDay }
-        }).populate('status');
+        return await this.model
+            .find({
+                $or: [{ user: userId }, { assignedTo: userId }],
+                endDate: { $gte: startOfDay, $lte: endOfDay }
+            })
+            .populate('status');
     }
 
     async unassignTask(id, userId) {
@@ -1762,7 +1812,6 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
 
         task.assignedTo = null;
 
-        // Create audit log
         await AuditLog.create({
             action: 'Task Unassigned',
             performedBy: userId,
@@ -1779,7 +1828,6 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
         task.endDate = endDate;
         task.modifiedDate = new Date();
 
-        // Create audit log
         await AuditLog.create({
             action: 'Task End Date Updated',
             performedBy: userId,
@@ -1788,24 +1836,6 @@ class TaskRepository extends BaseRepositoryWithSoftDelete {
             changes: { endDate: endDate }
         });
 
-        return await task.save();
-    }
-
-    async softDelete(id) {
-        const task = await this.findById(id);
-        if (!task) throw new Error('Task not found');
-        
-        task.isDeleted = true;
-        task.deletedAt = new Date();
-        return await task.save();
-    }
-
-    async restore(id) {
-        const task = await this.model.findOne({ _id: id, isDeleted: true });
-        if (!task) throw new Error('Task not found or already restored');
-
-        task.isDeleted = false;
-        task.deletedAt = null;
         return await task.save();
     }
 }
@@ -1819,6 +1849,7 @@ const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
 const AuditLog = require('../models/auditLog');
 const payment = require('../models/payment');
+const CustomError = require('../util/customError');
 
 class UserRepository extends BaseRepository {
     constructor() {
@@ -1844,18 +1875,21 @@ class UserRepository extends BaseRepository {
     }
 
     async createUser(userData) {
-        const newUser = await this.create(userData);
-
-        // Create audit log
-        await AuditLog.create({
-            action: 'User Registered',
-            performedBy: newUser._id,
-            entity: 'User',
-            entityId: newUser._id,
-            changes: { username: newUser.username, roles: newUser.roles }
-        });
-
-        return newUser;
+        try {        
+            console.log("@!@!@!@!@!@! userData",userData);
+            const newUser = await this.create(userData);
+            await AuditLog.create({
+                action: 'User Registered',
+                performedBy: newUser._id,
+                entity: 'User',
+                entityId: newUser._id,
+                changes: { username: newUser.username, roles: newUser.roles }
+            });
+            return newUser;
+        }
+        catch (e) {
+            throw new CustomError("Failed to create the user");
+        }
     }
 
     async getAllAdmins() {
@@ -2204,6 +2238,10 @@ class RoleService extends BaseService {
         return await this.repository.findAll();
     }
 
+    async getRoleByName(roleName) {
+        return await this.repository.findByName(roleName);
+    }
+
     async getRoleById(id) {
         return await this.repository.findById(id);
     }
@@ -2440,19 +2478,32 @@ File: services\user.js
 ----------------------------------------
 const BaseService = require('./baseService');
 const { generateToken } = require('../util/jwt');
+const CustomError = require('../util/customError');
 
 class UserService extends BaseService {
-    constructor(repository) {
-        super(repository);
+    constructor(userRepository, roleRepository) {
+        super(userRepository);
+        this.roleRepository = roleRepository; // Injecting roleRepository here
     }
 
     async registerUser(userData) {
         const existingUser = await this.repository.findByUsername(userData.username);
         if (existingUser) {
-            throw new Error('User already exists');
+            throw new CustomError('User already exists');
         }
+
+        if (!userData.roles) {
+            const role = await this.roleRepository.findByName('user');
+            if (!role) {
+                throw new CustomError('user role not found', 500);
+            }
+            userData.roles = role._id; 
+        }
+
         const newUser = await this.repository.createUser(userData);
+
         const token = await generateToken(newUser._id);
+
         return {
             _id: newUser._id,
             username: newUser.username,
@@ -2465,23 +2516,29 @@ class UserService extends BaseService {
     async loginUser(username, password) {
         const user = await this.repository.validateUser(username, password);
         if (!user) {
-            throw new Error('Invalid username or password');
+            throw new CustomError('Invalid username or password');
         }
-
-        const token = await generateToken(user._id);
+    
+        const foundUser = await this.repository.model
+            .findById(user._id)
+            .populate('roles'); 
+    
+        const token = await generateToken(foundUser._id);
+    
         return {
-            _id: user._id,
-            username: user.username,
-            email: user.email,
-            roles: user.roles,
+            _id: foundUser._id,
+            username: foundUser.username,
+            email: foundUser.email,
+            roles: foundUser.roles, 
             token: 'Bearer ' + token
         };
     }
+    
 
     async getUserById(id) {
         const user = await this.repository.findById(id).populate('roles');
         if (!user) {
-            throw new Error('User not found');
+            throw new CustomError('User not found');
         }
         return user;
     }
@@ -2491,17 +2548,23 @@ class UserService extends BaseService {
     }
 
     async assignRole(userId, roleId) {
+        console.log("@!@!@!@! Reached service layer");
         const user = await this.repository.findById(userId);
         if (!user) {
-            throw new Error('User not found');
+            throw new CustomError('User not found');
         }
-
+        console.log("@!@!@!@! user found");
+        const role = await this.roleRepository.findById(roleId);
+        if (!role) {
+            throw new CustomError('Role not found');
+        }
+        console.log("@!@!@!@! user and role are found");
         if (!user.roles.includes(roleId)) {
-            user.roles.push(roleId);
-            await user.save();
+            user.roles.push(roles);
+            await user.save(); 
         }
 
-        return user;
+        return await this.repository.findById(userId).populate('roles');
     }
 }
 

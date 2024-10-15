@@ -1,3 +1,5 @@
+const CustomError = require("../util/customError");
+
 class BaseRepository {
     constructor(model) {
         this.model = model;
@@ -30,11 +32,12 @@ class BaseRepository {
     }
 
     async findById(id, populate = '') {
+        console.log('@!@!@!@! reached bas repository');
         try {
             const doc = await this.model.findById(id).populate(populate);
             return doc;
         } catch (error) {
-            throw new Error(
+            throw new CustomError(
                 `${this.model.modelName} not found with id ${id}`
             );
         }

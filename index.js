@@ -26,7 +26,6 @@ app.use((err, req, res, next) => {
     if (err instanceof CustomError) {
         CustomError.handleError(err, res);
     } else {
-        // If it's not a CustomError, you can send a generic response
         res.status(500).json({
             success: false,
             message: 'Internal Server Error'
