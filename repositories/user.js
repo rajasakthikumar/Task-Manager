@@ -47,6 +47,22 @@ class UserRepository extends BaseRepository {
         return await this.model.find({ roles: 'admin' }).select('username roles');
     }
 
+    async getUserByIds(userIds) {
+        const users = await this.model.find({id: {$in:userIds}}).populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
+
+        if (!users) {    
+            throw new CustomError('overdue users not found or error in fetching', 404);
+        }
+
+        return users;
+    }
+
 }
 
 module.exports = UserRepository;

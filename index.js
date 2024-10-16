@@ -1,5 +1,6 @@
 const express = require('express');
 const dotenv = require('dotenv');
+const errorHandler = require('./middleware/errorHandler')
 
 const CustomError = require('./util/customError');
 const taskRoutes = require('./routes/task');
@@ -7,6 +8,7 @@ const statusRoutes = require('./routes/status');
 const userRoutes = require('./routes/user');
 const roleRoutes = require('./routes/role');
 // const commentRoutes = require('./routes/comment');
+const paymentRoutes = require('./routes/payment');
 
 const seedPermissionsAndRoles = require('./seed');
 
@@ -22,17 +24,9 @@ app.use('/api/status', statusRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
 // app.use('/api', commentRoutes);
+app.use('/api/payment',paymentRoutes);
 
-app.use((err, req, res, next) => {
-    if (err instanceof CustomError) {
-        CustomError.handleError(err, res);
-    } else {
-        res.status(500).json({
-            success: false,
-            message: 'Internal Server Error'
-        });
-    }
-});
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 const startServer = async () => {
