@@ -1,14 +1,15 @@
+
 const BaseService = require('./baseService');
 const { sendEmail } = require('./email');
 const CustomError = require('../util/customError');
 
 class TaskService extends BaseService {
-    constructor(taskRepository, commentRepository, userRepository, statusRepository, auditLogRepository) {
+    constructor(taskRepository, commentService, userService, statusService, auditLogService) {
         super(taskRepository);
-        this.commentRepository = commentRepository;
-        this.userRepository = userRepository;
-        this.statusRepository = statusRepository;
-        this.auditLogRepository = auditLogRepository;
+        this.commentService = commentService;
+        this.userService = userService;
+        this.statusService = statusService;
+        this.auditLogService = auditLogService;
     }
 
     async getAllTasks(user) {
@@ -24,14 +25,18 @@ class TaskService extends BaseService {
     async createTask(taskData, user, assignedToId = null) {
         let assignedTo = null;
         if (assignedToId) {
-            assignedTo = await this.userRepository.findById(assignedToId);
+            assignedTo = await this.userService.getUserById(assignedToId);
             if (!assignedTo) throw new CustomError('Assigned user not found', 404);
         }
 
         const newTask = await this.repository.createTask(taskData, user, assignedTo);
 
         if (assignedTo && assignedTo.email) {
-            await sendEmail(assignedTo.email, 'New Task Assigned', `You have been assigned a new task: ${taskData.title}`);
+            await sendEmail(
+                assignedTo.email,
+                'New Task Assigned',
+                `You have been assigned a new task: ${taskData.title}`
+            );
         }
 
         return newTask;
@@ -42,14 +47,18 @@ class TaskService extends BaseService {
     }
 
     async updateTaskStatus(taskId, statusId, user) {
-        const status = await this.statusRepository.findById(statusId);
+        const status = await this.statusService.findById(statusId);
         if (!status) throw new CustomError('Invalid status', 400);
 
         const task = await this.repository.updateTaskStatus(taskId, statusId, user._id);
 
-        const taskOwner = await this.userRepository.findById(task.user);
+        const taskOwner = await this.userService.getUserById(task.user);
         if (taskOwner && taskOwner.email) {
-            await sendEmail(taskOwner.email, 'Task Status Updated', `Your task "${task.title}" status has been updated to "${status.statusName}".`);
+            await sendEmail(
+                taskOwner.email,
+                'Task Status Updated',
+                `Your task "${task.title}" status has been updated to "${status.statusName}".`
+            );
         }
 
         return task;
@@ -62,11 +71,14 @@ class TaskService extends BaseService {
     async assignTask(id, userId, assignedToId) {
         const task = await this.repository.assignTask(id, userId, assignedToId);
 
-        const assignedToUser = await this.userRepository.findById(assignedToId);
+        const assignedToUser = await this.userService.getUserById(assignedToId);
         if (assignedToUser && assignedToUser.email) {
-            await sendEmail(assignedToUser.email, 'Task Assigned', `You have been assigned a task: ${task.title}`);
+            await sendEmail(
+                assignedToUser.email,
+                'Task Assigned',
+                `You have been assigned a task: ${task.title}`
+            );
         }
-
         return task;
     }
 

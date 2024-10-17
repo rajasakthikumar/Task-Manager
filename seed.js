@@ -2,7 +2,6 @@ const Permission = require('./models/permission');
 const Role = require('./models/role');
 
 const seedPermissionsAndRoles = async () => {
-    // Define permissions
     const permissions = [
         { name: 'VIEW_TASKS', description: 'View all tasks' },
         { name: 'CREATE_TASK', description: 'Create new task' },
@@ -10,7 +9,6 @@ const seedPermissionsAndRoles = async () => {
         { name: 'DELETE_TASK', description: 'Delete task' }
     ];
 
-    // Seed permissions
     for (const permissionData of permissions) {
         const existingPermission = await Permission.findOne({ name: permissionData.name });
         if (!existingPermission) {
@@ -18,13 +16,11 @@ const seedPermissionsAndRoles = async () => {
         }
     }
 
-    // Define roles and map permissions to roles
     const roles = [
         { name: 'admin', permissions: ['VIEW_TASKS', 'CREATE_TASK', 'UPDATE_TASK', 'DELETE_TASK'] },
         { name: 'user', permissions: ['VIEW_TASKS'] }
     ];
 
-    // Seed roles
     for (const roleData of roles) {
         const existingRole = await Role.findOne({ name: roleData.name });
         if (!existingRole) {

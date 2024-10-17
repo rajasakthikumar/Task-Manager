@@ -1,11 +1,9 @@
 const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
-const AuditLog = require('../models/auditLog');
 const CustomError = require('../util/customError');
 
 class UserRepository extends BaseRepository {
     constructor() {
-        console.log('User Repository created');
         super(User);
     }
 
@@ -26,20 +24,11 @@ class UserRepository extends BaseRepository {
     }
 
     async createUser(userData) {
-        try {        
-            console.log("@!@!@!@!@!@! userData",userData);
+        try {
             const newUser = await this.create(userData);
-            await AuditLog.create({
-                action: 'User Registered',
-                performedBy: newUser._id,
-                entity: 'User',
-                entityId: newUser._id,
-                changes: { username: newUser.username, roles: newUser.roles }
-            });
             return newUser;
-        }
-        catch (e) {
-            throw new CustomError("Failed to create the user");
+        } catch (error) {
+            throw new CustomError(`Failed to create the user: ${error.message}`);
         }
     }
 
@@ -48,7 +37,7 @@ class UserRepository extends BaseRepository {
     }
 
     async getUserByIds(userIds) {
-        const users = await this.model.find({id: {$in:userIds}}).populate({
+        const users = await this.model.find({ _id: { $in: userIds } }).populate({
             path: 'roles',
             populate: {
                 path: 'permissions',
@@ -56,13 +45,26 @@ class UserRepository extends BaseRepository {
             }
         });
 
-        if (!users) {    
-            throw new CustomError('overdue users not found or error in fetching', 404);
+        if (!users) {
+            throw new CustomError('Users not found or error in fetching', 404);
         }
-
         return users;
     }
 
+    async getUserById(id) {
+        const query = this.model.findById(id);
+        const user = await query.populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
+        if (!user) {
+            throw new CustomError('User not found');
+        }
+        return user;
+    }
 }
 
 module.exports = UserRepository;

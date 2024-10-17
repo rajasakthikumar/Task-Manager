@@ -27,19 +27,19 @@ const roleRepository = new RoleRepository();
 const auditLogRepository = new AuditLogRepository();
 const paymentRepository = new PaymentRepository();
 
-const taskService = new TaskService(
-    taskRepository, 
-    commentRepository, 
-    userRepository, 
-    statusRepository, 
-    auditLogRepository
-);
-const statusService = new StatusService(statusRepository, auditLogRepository);
-const userService = new UserService(userRepository, roleRepository);
 const roleService = new RoleService(roleRepository);
 const auditLogService = new AuditLogService(auditLogRepository);
+const userService = new UserService(userRepository, roleService, auditLogService);
+const statusService = new StatusService(statusRepository, auditLogService);
 const commentService = new CommentService(commentRepository);
-const paymentService = new PaymentService(paymentRepository,userRepository);
+const paymentService = new PaymentService(paymentRepository,userService);
+const taskService = new TaskService(
+    taskRepository,
+    commentService,
+    userService,
+    statusService,
+    auditLogService
+);
 
 const taskController = new TaskController(taskService);
 const statusController = new StatusController(statusService);

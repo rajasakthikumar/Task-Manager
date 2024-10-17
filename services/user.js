@@ -1,12 +1,13 @@
 const BaseService = require('./baseService');
 const { generateToken } = require('../util/jwt');
 const CustomError = require('../util/customError');
-const { populateRolesAndPermissions } = require('../util/populate'); 
+const { populateRolesAndPermissions } = require('../util/populate');
 
 class UserService extends BaseService {
-    constructor(userRepository, roleRepository) {
+    constructor(userRepository, roleService, auditLogService) {
         super(userRepository);
-        this.roleRepository = roleRepository; 
+        this.roleService = roleService;
+        this.auditLogService = auditLogService;
     }
 
     async registerUser(userData) {
@@ -16,15 +17,27 @@ class UserService extends BaseService {
         }
 
         if (!userData.roles) {
-            const role = await this.roleRepository.findByName('user');
+            const role = await this.roleService.getRoleByName('user');
             if (!role) {
                 throw new CustomError('User role not found', 500);
             }
-            userData.roles = role._id; 
+            userData.roles = [role._id];
         }
 
-        const newUser = await this.repository.create(userData);
-        
+        const newUser = await this.repository.createUser(userData);
+
+        await this.auditLogService.create({
+            action: 'User Registered',
+            performedBy: newUser._id,
+            entity: 'User',
+            entityId: newUser._id,
+            changes: {
+                username: newUser.username,
+                email: newUser.email,
+                roles: newUser.roles
+            },
+        });
+
         await populateRolesAndPermissions(newUser);
 
         const token = await generateToken(newUser._id);
@@ -44,7 +57,7 @@ class UserService extends BaseService {
             throw new CustomError('Invalid username or password');
         }
 
-        const foundUser = await populateRolesAndPermissions(this.repository.model.findById(user._id));
+        const foundUser = await this.getUserById(user._id);
 
         const token = await generateToken(foundUser._id);
 
@@ -52,13 +65,13 @@ class UserService extends BaseService {
             _id: foundUser._id,
             username: foundUser.username,
             email: foundUser.email,
-            roles: foundUser.roles, 
+            roles: foundUser.roles,
             token: 'Bearer ' + token
         };
     }
 
     async getUserById(id) {
-        const query = this.repository.model.findById(id);
+        const query = this.repository.findById(id);
         const user = await populateRolesAndPermissions(query);
         if (!user) {
             throw new CustomError('User not found');
@@ -67,42 +80,43 @@ class UserService extends BaseService {
     }
 
     async getAllUsers() {
-        const query = this.repository.model.find({});
+        const query = this.repository.findAll();
         return await populateRolesAndPermissions(query);
     }
 
     async assignRole(userId, roleId) {
-        try {
-            const user = await this.repository.findById(userId);
-            if (!user) {
-                throw new CustomError('User not found');
-            }
-
-            const role = await this.roleRepository.findById(roleId);
-            if (!role) {
-                throw new CustomError('Role not found');
-            }
-
-            if (!user.roles.includes(roleId)) {
-                user.roles.push(roleId);
-
-                try {
-                    await user.save();
-                    console.log('Roles assigned successfully');
-                } catch (error) {
-                    console.error('Error while saving user:', error);
-                    throw new CustomError('Error while saving user role');
-                }
-            } else {
-                console.log('Role already assigned to the user');
-            }
-
-            const savedUser = await populateRolesAndPermissions(this.repository.model.findById(userId));
-            return savedUser;
-        } catch (error) {
-            console.error('Error in assignRole function:', error);
-            throw new CustomError('Internal Server Error');
+        const user = await this.repository.findById(userId);
+        if (!user) {
+            throw new CustomError('User not found');
         }
+
+        const role = await this.roleService.getRoleById(roleId);
+        if (!role) {
+            throw new CustomError('Role not found');
+        }
+
+        if (!user.roles.includes(roleId)) {
+            user.roles.push(roleId);
+            await user.save();
+
+            await this.auditLogService.create({
+                action: 'Role Assigned',
+                performedBy: userId,
+                entity: 'User',
+                entityId: userId,
+                changes: {
+                    roles: user.roles
+                },
+            });
+        }
+
+        const savedUser = await this.getUserById(userId);
+        return savedUser;
+    }
+
+    async getUsersById(userIds) {
+        const users = await this.repository.getUserByIds(userIds);
+        return users;
     }
 }
 

@@ -29,19 +29,19 @@ const roleRepository = new RoleRepository();
 const auditLogRepository = new AuditLogRepository();
 const paymentRepository = new PaymentRepository();
 
-const taskService = new TaskService(
-    taskRepository, 
-    commentRepository, 
-    userRepository, 
-    statusRepository, 
-    auditLogRepository
-);
-const statusService = new StatusService(statusRepository, auditLogRepository);
-const userService = new UserService(userRepository, roleRepository);
 const roleService = new RoleService(roleRepository);
+const userService = new UserService(userRepository, roleService);
 const auditLogService = new AuditLogService(auditLogRepository);
+const statusService = new StatusService(statusRepository, auditLogService);
 const commentService = new CommentService(commentRepository);
-const paymentService = new PaymentService(paymentRepository,userRepository);
+const paymentService = new PaymentService(paymentRepository,userService);
+const taskService = new TaskService(
+    taskRepository,
+    commentService,
+    userService,
+    statusService,
+    auditLogService
+);
 
 const taskController = new TaskController(taskService);
 const statusController = new StatusController(statusService);
@@ -1283,151 +1283,120 @@ module.exports = RoleRepository;
 
 File: repositories\status.js
 ----------------------------------------
-// repositories/statusRepository.js
 const BaseRepositoryWithSoftDelete = require('./baseRepositoryWithSoftDelete');
 const Status = require('../models/status');
-const AuditLog = require('../models/auditLog');
-const CustomError = require('../util/customError')
+const CustomError = require('../util/customError');
 
 class StatusRepository extends BaseRepositoryWithSoftDelete {
     constructor() {
-        console.log("Status Repository created");
         super(Status);
     }
 
-    async getAllStatus(userId) {
-        return await this.model.find({}).populate('nextStatuses').populate('prevStatuses');
-    }
-
-    async createStatus(statusData, userId) {
-        const newStatus = await this.model.create(statusData);
-
-        await AuditLog.create({
-            action: 'Status Created',
-            performedBy: userId,
-            entity: 'Status',
-            entityId: newStatus._id,
-            changes: { statusData }
-        });
-
-        return newStatus;
-    }
-
-    async deleteStatus(id, userId) {
-        const status = await this.findById(id);
-        if (!status) throw new CustomError('Status not found');
-
-        await this.softDelete(id);
-
-        await AuditLog.create({
-            action: 'Status Soft Deleted',
-            performedBy: userId,
-            entity: 'Status',
-            entityId: id
-        });
-
-        return status;
-    }
-
-    async restoreStatus(id, userId) {
-        const status = await this.restore(id);
-        if (!status) throw new CustomError('Status not found');
-
-        await AuditLog.create({
-            action: 'Status Restored',
-            performedBy: userId,
-            entity: 'Status',
-            entityId: id
-        });
-
-        return status;
-    }
-
-    async hardDeleteStatus(id, userId) {
-        const status = await this.findById(id);
-        if (!status) throw new CustomError('Status not found');
-
-        await this.delete(id);
-
-        await AuditLog.create({
-            action: 'Status Permanently Deleted',
-            performedBy: userId,
-            entity: 'Status',
-            entityId: id
-        });
-
-        return status;
-    }
-
-    async modifyStatus(id, statusData, userId) {
-        const status = await this.update(id, statusData);
-
-        await AuditLog.create({
-            action: 'Status Modified',
-            performedBy: userId,
-            entity: 'Status',
-            entityId: id,
-            changes: statusData
-        });
-
-        return status;
-    }
-
-    async addNextStatus(id, nextStatusId, userId) {
-        const status = await this.findById(id);
-        if (!status) throw new CustomError('Status not found');
-
-        status.nextStatuses.push(nextStatusId);
-        await status.save();
-
-        await AuditLog.create({
-            action: 'Next Status Added',
-            performedBy: userId,
-            entity: 'Status',
-            entityId: id,
-            changes: { nextStatusId }
-        });
-
-        return status;
-    }
-
-    async addPrevStatus(id, prevStatusId, userId) {
-        const status = await this.findById(id);
-        if (!status) throw new CustomError('Status not found');
-
-        status.prevStatuses.push(prevStatusId);
-        await status.save();
-
-        await AuditLog.create({
-            action: 'Previous Status Added',
-            performedBy: userId,
-            entity: 'Status',
-            entityId: id,
-            changes: { prevStatusId }
-        });
-
-        return status;
-    }
-
-    async validateTransition(currentStatusId, nextStatusId, userId) {
-        const currentStatus = await this.findById(currentStatusId);
-        if (!currentStatus) throw new CustomError('Current status not found');
-
-        if (!currentStatus.nextStatuses.includes(nextStatusId)) {
-            throw new CustomError('Invalid status transition');
+    async getAllStatus() {
+        try {
+            return await this.model.find({ isDeleted: false })
+                .populate('nextStatuses')
+                .populate('prevStatuses');
+        } catch (error) {
+            throw new CustomError(`Error fetching statuses: ${error.message}`);
         }
-
-        await AuditLog.create({
-            action: 'Status Transition Validated',
-            performedBy: userId,
-            entity: 'StatusTransition',
-            entityId: `${currentStatusId}->${nextStatusId}`,
-            changes: {}
-        });
-
-        return true;
     }
 
+    async createStatus(statusData) {
+        try {
+            const newStatus = await this.model.create(statusData);
+            return newStatus;
+        } catch (error) {
+            throw new CustomError(`Error creating status: ${error.message}`);
+        }
+    }
+
+    async findById(id) {
+        try {
+            const status = await this.model.findById(id)
+                .populate('nextStatuses')
+                .populate('prevStatuses');
+
+            if (!status) {
+                throw new CustomError('Status not found', 404);
+            }
+
+            return status;
+        } catch (error) {
+            throw new CustomError(`Error finding status by ID: ${error.message}`);
+        }
+    }
+
+    async updateStatus(id, statusData) {
+        try {
+            const updatedStatus = await this.model.findByIdAndUpdate(
+                id,
+                statusData,
+                { new: true, runValidators: true }
+            ).populate('nextStatuses').populate('prevStatuses');
+
+            if (!updatedStatus) {
+                throw new CustomError('Status not found', 404);
+            }
+
+            return updatedStatus;
+        } catch (error) {
+            throw new CustomError(`Error updating status: ${error.message}`);
+        }
+    }
+
+    async addNextStatus(id, nextStatusId) {
+        try {
+            const status = await this.findById(id);
+            if (!status) {
+                throw new CustomError('Status not found', 404);
+            }
+
+            if (!status.nextStatuses.includes(nextStatusId)) {
+                status.nextStatuses.push(nextStatusId);
+                await status.save();
+            }
+
+            return status;
+        } catch (error) {
+            throw new CustomError(`Error adding next status: ${error.message}`);
+        }
+    }
+
+    async addPrevStatus(id, prevStatusId) {
+        try {
+            const status = await this.findById(id);
+            if (!status) {
+                throw new CustomError('Status not found', 404);
+            }
+
+            if (!status.prevStatuses.includes(prevStatusId)) {
+                status.prevStatuses.push(prevStatusId);
+                await status.save();
+            }
+
+            return status;
+        } catch (error) {
+            throw new CustomError(`Error adding previous status: ${error.message}`);
+        }
+    }
+
+    async validateTransition(currentStatusId, nextStatusId) {
+        try {
+            const currentStatus = await this.findById(currentStatusId);
+            if (!currentStatus) {
+                throw new CustomError('Current status not found', 404);
+            }
+
+            const isValidTransition = currentStatus.nextStatuses.some(
+                (status) => status._id.toString() === nextStatusId
+            );
+
+            return isValidTransition;
+        } catch (error) {
+            throw new CustomError(`Error validating status transition: ${error.message}`);
+        }
+    }
 }
 
 module.exports = StatusRepository;
@@ -1648,12 +1617,10 @@ File: repositories\user.js
 ----------------------------------------
 const BaseRepository = require('./baseRepository');
 const User = require('../models/user');
-const AuditLog = require('../models/auditLog');
 const CustomError = require('../util/customError');
 
 class UserRepository extends BaseRepository {
     constructor() {
-        console.log('User Repository created');
         super(User);
     }
 
@@ -1674,20 +1641,11 @@ class UserRepository extends BaseRepository {
     }
 
     async createUser(userData) {
-        try {        
-            console.log("@!@!@!@!@!@! userData",userData);
+        try {
             const newUser = await this.create(userData);
-            await AuditLog.create({
-                action: 'User Registered',
-                performedBy: newUser._id,
-                entity: 'User',
-                entityId: newUser._id,
-                changes: { username: newUser.username, roles: newUser.roles }
-            });
             return newUser;
-        }
-        catch (e) {
-            throw new CustomError("Failed to create the user");
+        } catch (error) {
+            throw new CustomError(`Failed to create the user: ${error.message}`);
         }
     }
 
@@ -1696,7 +1654,7 @@ class UserRepository extends BaseRepository {
     }
 
     async getUserByIds(userIds) {
-        const users = await this.model.find({id: {$in:userIds}}).populate({
+        const users = await this.model.find({ _id: { $in: userIds } }).populate({
             path: 'roles',
             populate: {
                 path: 'permissions',
@@ -1704,13 +1662,26 @@ class UserRepository extends BaseRepository {
             }
         });
 
-        if (!users) {    
-            throw new CustomError('overdue users not found or error in fetching', 404);
+        if (!users) {
+            throw new CustomError('Users not found or error in fetching', 404);
         }
-
         return users;
     }
 
+    async getUserById(id) {
+        const query = this.model.findById(id);
+        const user = await query.populate({
+            path: 'roles',
+            populate: {
+                path: 'permissions',
+                model: 'Permission'
+            }
+        });
+        if (!user) {
+            throw new CustomError('User not found');
+        }
+        return user;
+    }
 }
 
 module.exports = UserRepository;
@@ -1928,7 +1899,6 @@ const Permission = require('./models/permission');
 const Role = require('./models/role');
 
 const seedPermissionsAndRoles = async () => {
-    // Define permissions
     const permissions = [
         { name: 'VIEW_TASKS', description: 'View all tasks' },
         { name: 'CREATE_TASK', description: 'Create new task' },
@@ -1936,7 +1906,6 @@ const seedPermissionsAndRoles = async () => {
         { name: 'DELETE_TASK', description: 'Delete task' }
     ];
 
-    // Seed permissions
     for (const permissionData of permissions) {
         const existingPermission = await Permission.findOne({ name: permissionData.name });
         if (!existingPermission) {
@@ -1944,13 +1913,11 @@ const seedPermissionsAndRoles = async () => {
         }
     }
 
-    // Define roles and map permissions to roles
     const roles = [
         { name: 'admin', permissions: ['VIEW_TASKS', 'CREATE_TASK', 'UPDATE_TASK', 'DELETE_TASK'] },
         { name: 'user', permissions: ['VIEW_TASKS'] }
     ];
 
-    // Seed roles
     for (const roleData of roles) {
         const existingRole = await Role.findOne({ name: roleData.name });
         if (!existingRole) {
@@ -1980,6 +1947,15 @@ class AuditLogService extends BaseService {
 
     async getAuditLogs(filter = {}, options = {}) {
         return await this.repository.getLogs(filter, options);
+    }
+
+    async create(logData) {
+        try {
+            const auditLog = await this.repository.create(logData);
+            return auditLog;
+        } catch (error) {
+            throw new CustomError(`Error creating audit log: ${error.message}`);
+        }
     }
 }
 
@@ -2094,9 +2070,9 @@ const BaseService = require('./baseService');
 const CustomError = require('../util/customError');
 
 class PaymentService extends BaseService {
-    constructor(paymentRepository, userRepository) {
+    constructor(paymentRepository, userService) {
         super(paymentRepository);
-        this.userRepository = userRepository;
+        this.userService = userService;
     }
 
     async getUserPayments(userId) {
@@ -2104,7 +2080,7 @@ class PaymentService extends BaseService {
     }
 
     async createPayment(paymentData, userId) {
-        const user = await this.userRepository.findById(userId);
+        const user = await this.userService.getUserById(userId);
         if (!user) throw new CustomError('User not found', 404);
         paymentData.user = userId;
         const payment = await this.repository.createPayment(paymentData);
@@ -2116,7 +2092,7 @@ class PaymentService extends BaseService {
         const payments = await this.repository.getOverduePayments();
         const userIds = payments.map(payment => payment.user._id.toString);
         const uniqueUsers = [...new Set(userIds)];
-        const users = await this.userRepository.findUserByIds(uniqueUsers);
+        const users = await this.userService.getUsersById(uniqueUsers);
         return users;
     }
     
@@ -2164,51 +2140,171 @@ module.exports = RoleService;
 File: services\status.js
 ----------------------------------------
 const BaseService = require('./baseService');
+const CustomError = require('../util/customError');
 
 class StatusService extends BaseService {
-    constructor(repository, auditLogRepository) {
+    constructor(repository, auditLogService) {
         super(repository);
-        this.auditLogRepository = auditLogRepository;
+        this.auditLogService = auditLogService;
     }
 
-    async getAllStatus(user) {
-        return await this.repository.getAllStatus(user._id);
+    async getAllStatus() {
+        return await this.repository.getAllStatus();
     }
 
-    async getDeletedStatuses(user) {
+    async getDeletedStatuses() {
         return await this.repository.findAllDeleted();
     }
 
+    async findById(id) {
+        const status = await this.repository.findById(id);
+        if (!status) {
+            throw new CustomError('Status not found', 404);
+        }
+        return status;
+    }
+
     async createStatus(statusData, user) {
-        return await this.repository.createStatus(statusData, user._id);
+        const newStatus = await this.repository.createStatus(statusData);
+
+        await this.auditLogService.create({
+            action: 'Status Created',
+            performedBy: user._id,
+            entity: 'Status',
+            entityId: newStatus._id,
+            changes: { statusData },
+        });
+
+        return newStatus;
     }
 
     async deleteStatus(id, user) {
-        return await this.repository.deleteStatus(id, user._id);
+        const status = await this.repository.softDelete(id);
+        if (!status) {
+            throw new CustomError('Status not found', 404);
+        }
+
+        await this.auditLogService.create({
+            action: 'Status Soft Deleted',
+            performedBy: user._id,
+            entity: 'Status',
+            entityId: id,
+        });
+
+        return status;
     }
 
     async restoreStatus(id, user) {
-        return await this.repository.restoreStatus(id, user._id);
+        const status = await this.repository.restore(id);
+        if (!status) {
+            throw new CustomError('Status not found', 404);
+        }
+
+        await this.auditLogService.create({
+            action: 'Status Restored',
+            performedBy: user._id,
+            entity: 'Status',
+            entityId: id,
+        });
+
+        return status;
     }
 
     async hardDeleteStatus(id, user) {
-        return await this.repository.hardDeleteStatus(id, user._id);
+        const status = await this.repository.delete(id);
+        if (!status) {
+            throw new CustomError('Status not found', 404);
+        }
+
+        await this.auditLogService.create({
+            action: 'Status Permanently Deleted',
+            performedBy: user._id,
+            entity: 'Status',
+            entityId: id,
+        });
+
+        return status;
     }
 
     async modifyStatus(id, statusData, user) {
-        return await this.repository.modifyStatus(id, statusData, user._id);
+        const status = await this.repository.update(id, statusData);
+        if (!status) {
+            throw new CustomError('Status not found', 404);
+        }
+
+        await this.auditLogService.create({
+            action: 'Status Modified',
+            performedBy: user._id,
+            entity: 'Status',
+            entityId: id,
+            changes: statusData,
+        });
+
+        return status;
     }
 
     async addNextStatus(id, nextStatusId, user) {
-        return await this.repository.addNextStatus(id, nextStatusId, user._id);
+        const status = await this.repository.findById(id);
+        if (!status) {
+            throw new CustomError('Status not found', 404);
+        }
+
+        status.nextStatuses.push(nextStatusId);
+        await status.save();
+
+        await this.auditLogService.create({
+            action: 'Next Status Added',
+            performedBy: user._id,
+            entity: 'Status',
+            entityId: id,
+            changes: { nextStatusId },
+        });
+
+        return status;
     }
 
     async addPrevStatus(id, prevStatusId, user) {
-        return await this.repository.addPrevStatus(id, prevStatusId, user._id);
+        const status = await this.repository.findById(id);
+        if (!status) {
+            throw new CustomError('Status not found', 404);
+        }
+
+        status.prevStatuses.push(prevStatusId);
+        await status.save();
+
+        await this.auditLogService.create({
+            action: 'Previous Status Added',
+            performedBy: user._id,
+            entity: 'Status',
+            entityId: id,
+            changes: { prevStatusId },
+        });
+
+        return status;
     }
 
     async validateTransition(currentStatusId, nextStatusId, user) {
-        return await this.repository.validateTransition(currentStatusId, nextStatusId, user._id);
+        const currentStatus = await this.repository.findById(currentStatusId);
+        if (!currentStatus) {
+            throw new CustomError('Current status not found', 404);
+        }
+
+        const isValidTransition = currentStatus.nextStatuses.some(
+            (status) => status.toString() === nextStatusId
+        );
+
+        if (!isValidTransition) {
+            throw new CustomError('Invalid status transition', 400);
+        }
+
+        await this.auditLogService.create({
+            action: 'Status Transition Validated',
+            performedBy: user._id,
+            entity: 'StatusTransition',
+            entityId: `${currentStatusId}->${nextStatusId}`,
+        });
+
+        return true;
     }
 }
 
@@ -2217,17 +2313,18 @@ module.exports = StatusService;
 
 File: services\task.js
 ----------------------------------------
+
 const BaseService = require('./baseService');
 const { sendEmail } = require('./email');
 const CustomError = require('../util/customError');
 
 class TaskService extends BaseService {
-    constructor(taskRepository, commentRepository, userRepository, statusRepository, auditLogRepository) {
+    constructor(taskRepository, commentService, userService, statusService, auditLogService) {
         super(taskRepository);
-        this.commentRepository = commentRepository;
-        this.userRepository = userRepository;
-        this.statusRepository = statusRepository;
-        this.auditLogRepository = auditLogRepository;
+        this.commentService = commentService;
+        this.userService = userService;
+        this.statusService = statusService;
+        this.auditLogService = auditLogService;
     }
 
     async getAllTasks(user) {
@@ -2243,14 +2340,18 @@ class TaskService extends BaseService {
     async createTask(taskData, user, assignedToId = null) {
         let assignedTo = null;
         if (assignedToId) {
-            assignedTo = await this.userRepository.findById(assignedToId);
+            assignedTo = await this.userService.getUserById(assignedToId);
             if (!assignedTo) throw new CustomError('Assigned user not found', 404);
         }
 
         const newTask = await this.repository.createTask(taskData, user, assignedTo);
 
         if (assignedTo && assignedTo.email) {
-            await sendEmail(assignedTo.email, 'New Task Assigned', `You have been assigned a new task: ${taskData.title}`);
+            await sendEmail(
+                assignedTo.email,
+                'New Task Assigned',
+                `You have been assigned a new task: ${taskData.title}`
+            );
         }
 
         return newTask;
@@ -2261,14 +2362,18 @@ class TaskService extends BaseService {
     }
 
     async updateTaskStatus(taskId, statusId, user) {
-        const status = await this.statusRepository.findById(statusId);
+        const status = await this.statusService.findById(statusId);
         if (!status) throw new CustomError('Invalid status', 400);
 
         const task = await this.repository.updateTaskStatus(taskId, statusId, user._id);
 
-        const taskOwner = await this.userRepository.findById(task.user);
+        const taskOwner = await this.userService.getUserById(task.user);
         if (taskOwner && taskOwner.email) {
-            await sendEmail(taskOwner.email, 'Task Status Updated', `Your task "${task.title}" status has been updated to "${status.statusName}".`);
+            await sendEmail(
+                taskOwner.email,
+                'Task Status Updated',
+                `Your task "${task.title}" status has been updated to "${status.statusName}".`
+            );
         }
 
         return task;
@@ -2281,11 +2386,14 @@ class TaskService extends BaseService {
     async assignTask(id, userId, assignedToId) {
         const task = await this.repository.assignTask(id, userId, assignedToId);
 
-        const assignedToUser = await this.userRepository.findById(assignedToId);
+        const assignedToUser = await this.userService.getUserById(assignedToId);
         if (assignedToUser && assignedToUser.email) {
-            await sendEmail(assignedToUser.email, 'Task Assigned', `You have been assigned a task: ${task.title}`);
+            await sendEmail(
+                assignedToUser.email,
+                'Task Assigned',
+                `You have been assigned a task: ${task.title}`
+            );
         }
-
         return task;
     }
 
@@ -2346,12 +2454,13 @@ File: services\user.js
 const BaseService = require('./baseService');
 const { generateToken } = require('../util/jwt');
 const CustomError = require('../util/customError');
-const { populateRolesAndPermissions } = require('../util/populate'); 
+const { populateRolesAndPermissions } = require('../util/populate');
 
 class UserService extends BaseService {
-    constructor(userRepository, roleRepository) {
+    constructor(userRepository, roleService, auditLogService) {
         super(userRepository);
-        this.roleRepository = roleRepository; 
+        this.roleService = roleService;
+        this.auditLogService = auditLogService;
     }
 
     async registerUser(userData) {
@@ -2361,15 +2470,27 @@ class UserService extends BaseService {
         }
 
         if (!userData.roles) {
-            const role = await this.roleRepository.findByName('user');
+            const role = await this.roleService.getRoleByName('user');
             if (!role) {
                 throw new CustomError('User role not found', 500);
             }
-            userData.roles = role._id; 
+            userData.roles = [role._id];
         }
 
-        const newUser = await this.repository.create(userData);
-        
+        const newUser = await this.repository.createUser(userData);
+
+        await this.auditLogService.create({
+            action: 'User Registered',
+            performedBy: newUser._id,
+            entity: 'User',
+            entityId: newUser._id,
+            changes: {
+                username: newUser.username,
+                email: newUser.email,
+                roles: newUser.roles
+            },
+        });
+
         await populateRolesAndPermissions(newUser);
 
         const token = await generateToken(newUser._id);
@@ -2389,7 +2510,7 @@ class UserService extends BaseService {
             throw new CustomError('Invalid username or password');
         }
 
-        const foundUser = await populateRolesAndPermissions(this.repository.model.findById(user._id));
+        const foundUser = await this.getUserById(user._id);
 
         const token = await generateToken(foundUser._id);
 
@@ -2397,13 +2518,13 @@ class UserService extends BaseService {
             _id: foundUser._id,
             username: foundUser.username,
             email: foundUser.email,
-            roles: foundUser.roles, 
+            roles: foundUser.roles,
             token: 'Bearer ' + token
         };
     }
 
     async getUserById(id) {
-        const query = this.repository.model.findById(id);
+        const query = this.repository.findById(id);
         const user = await populateRolesAndPermissions(query);
         if (!user) {
             throw new CustomError('User not found');
@@ -2412,42 +2533,43 @@ class UserService extends BaseService {
     }
 
     async getAllUsers() {
-        const query = this.repository.model.find({});
+        const query = this.repository.findAll();
         return await populateRolesAndPermissions(query);
     }
 
     async assignRole(userId, roleId) {
-        try {
-            const user = await this.repository.findById(userId);
-            if (!user) {
-                throw new CustomError('User not found');
-            }
-
-            const role = await this.roleRepository.findById(roleId);
-            if (!role) {
-                throw new CustomError('Role not found');
-            }
-
-            if (!user.roles.includes(roleId)) {
-                user.roles.push(roleId);
-
-                try {
-                    await user.save();
-                    console.log('Roles assigned successfully');
-                } catch (error) {
-                    console.error('Error while saving user:', error);
-                    throw new CustomError('Error while saving user role');
-                }
-            } else {
-                console.log('Role already assigned to the user');
-            }
-
-            const savedUser = await populateRolesAndPermissions(this.repository.model.findById(userId));
-            return savedUser;
-        } catch (error) {
-            console.error('Error in assignRole function:', error);
-            throw new CustomError('Internal Server Error');
+        const user = await this.repository.findById(userId);
+        if (!user) {
+            throw new CustomError('User not found');
         }
+
+        const role = await this.roleService.getRoleById(roleId);
+        if (!role) {
+            throw new CustomError('Role not found');
+        }
+
+        if (!user.roles.includes(roleId)) {
+            user.roles.push(roleId);
+            await user.save();
+
+            await this.auditLogService.create({
+                action: 'Role Assigned',
+                performedBy: userId,
+                entity: 'User',
+                entityId: userId,
+                changes: {
+                    roles: user.roles
+                },
+            });
+        }
+
+        const savedUser = await this.getUserById(userId);
+        return savedUser;
+    }
+
+    async getUsersById(userIds) {
+        const users = await this.repository.getUserByIds(userIds);
+        return users;
     }
 }
 
